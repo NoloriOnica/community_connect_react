@@ -1,0 +1,858 @@
+This is my ListingsTabProfile.js:
+
+import React, { useState, useEffect } from 'react';
+import './ListingsTabProfile.css';
+import ViewListingCard from './ViewListingCard';
+
+const ListingsTabProfile = ({ userId }) => {
+  const token = localStorage.getItem('token');
+  const API_URL = process.env.REACT_APP_API_URL;
+
+  const [activeSubTab, setActiveSubTab] = useState('available');
+  const [availableListings, setAvailableListings] = useState([]);
+  const [reservedListings, setReservedListings] = useState([]);
+
+  // State for edit modal
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingListing, setEditingListing] = useState(null);
+  const [newImageFile, setNewImageFile] = useState(null);
+
+  // Fetch available listings
+  useEffect(() => {
+    if (!userId) return;
+    fetch(`${API_URL}/profile/${userId}/listings/available`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setAvailableListings(data.filter(listing => listing.status === 'available'));
+      })
+      .catch(err => console.error("Error fetching available listings", err));
+  }, [userId, token, API_URL]);
+
+  // Fetch reserved listings
+  useEffect(() => {
+    if (!userId) return;
+    fetch(`${API_URL}/profile/${userId}/listings/reserved`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        setReservedListings(data.filter(listing => listing.status === 'reserved'));
+      })
+      .catch(err => console.error("Error fetching reserved listings", err));
+  }, [userId, token, API_URL]);
+
+  // Handlers for available listings
+  const handleEdit = (listing) => {
+    setEditingListing(listing);
+    setNewImageFile(null);
+    setShowEditModal(true);
+  };
+
+  const handleDelete = (listingId) => {
+    fetch(`${API_URL}/profile/listing/${listingId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(() => {
+        setAvailableListings(prev => prev.filter(item => item.id !== listingId));
+      })
+      .catch(err => console.error("Error deleting listing", err));
+  };
+
+  // Handlers for reserved listings
+  const handleApprove = (listingId) => {
+    fetch(`${API_URL}/profile/listing/${listingId}/approve`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(() => {
+        setReservedListings(prev => prev.filter(item => item.id !== listingId));
+      })
+      .catch(err => console.error("Error approving listing", err));
+  };
+
+  const handleReject = (listingId) => {
+    fetch(`${API_URL}/profile/listing/${listingId}/reject`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(() => {
+        setReservedListings(prev => prev.filter(item => item.id !== listingId));
+      })
+      .catch(err => console.error("Error rejecting listing", err));
+  };
+
+  // Modal handlers
+  const handleCloseEditModal = () => {
+    setShowEditModal(false);
+    setEditingListing(null);
+    setNewImageFile(null);
+  };
+
+  const handleSaveEdit = () => {
+    if (newImageFile) {
+      const formData = new FormData();
+      formData.append("item_name", editingListing.item_name);
+      formData.append("description", editingListing.description);
+      formData.append("type", editingListing.type);
+      formData.append("expiry_date", editingListing.expiry_date);
+      formData.append("allergy", editingListing.allergy);
+      formData.append("picture", newImageFile);
+
+      fetch(`${API_URL}/profile/listing/${editingListing.id}/edit`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      })
+        .then(res => res.json())
+        .then(updated => {
+          setAvailableListings(prev =>
+            prev.map(item => (item.id === updated.id ? updated : item))
+          );
+          handleCloseEditModal();
+        })
+        .catch(err => console.error("Error saving listing", err));
+    } else {
+      const updatedData = {
+        item_name: editingListing.item_name,
+        description: editingListing.description,
+        type: editingListing.type,
+        expiry_date: editingListing.expiry_date,
+        allergy: editingListing.allergy
+      };
+      fetch(`${API_URL}/profile/listing/${editingListing.id}/edit`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(updatedData)
+      })
+        .then(res => res.json())
+        .then(updated => {
+          setAvailableListings(prev =>
+            prev.map(item => (item.id === updated.id ? updated : item))
+          );
+          handleCloseEditModal();
+        })
+        .catch(err => console.error("Error saving listing", err));
+    }
+  };
+
+  return (
+    <div className="listings-tab-profile">
+      <div className="sub-tabs">
+        <button 
+          className={activeSubTab === 'available' ? 'active' : ''}
+          onClick={() => setActiveSubTab('available')}
+        >
+          Available <span className="badge">{availableListings.length}</span>
+        </button>
+        <button 
+          className={activeSubTab === 'reserved' ? 'active' : ''}
+          onClick={() => setActiveSubTab('reserved')}
+        >
+          Reserved <span className="badge">{reservedListings.length}</span>
+        </button>
+      </div>
+
+      <div className="listings-content">
+        {activeSubTab === 'available' &&
+          availableListings.map(listing => (
+            <ViewListingCard
+              key={listing.id}
+              listing={listing}
+              onEdit={handleEdit}
+              onDelete={handleDelete}
+            />
+          ))
+        }
+        {activeSubTab === 'reserved' &&
+          reservedListings.map(listing => (
+            <ViewListingCard
+              key={listing.id}
+              listing={listing}
+              onApprove={handleApprove}
+              onReject={handleReject}
+            />
+          ))
+        }
+      </div>
+
+      {showEditModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h3>Edit Listing</h3>
+              <span className="close-button" onClick={handleCloseEditModal}>
+                &times;
+              </span>
+            </div>
+            <div className="modal-body">
+              {editingListing && (
+                <form>
+                  <div className="form-group">
+                    <label>Item Name</label>
+                    <input
+                      type="text"
+                      value={editingListing.item_name}
+                      onChange={(e) =>
+                        setEditingListing({ ...editingListing, item_name: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Description</label>
+                    <textarea
+                      value={editingListing.description}
+                      onChange={(e) =>
+                        setEditingListing({ ...editingListing, description: e.target.value })
+                      }
+                    ></textarea>
+                  </div>
+                  <div className="form-group">
+                    <label>Type</label>
+                    <input
+                      type="text"
+                      value={editingListing.type}
+                      onChange={(e) =>
+                        setEditingListing({ ...editingListing, type: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Expiry Date</label>
+                    <input
+                      type="date"
+                      value={editingListing.expiry_date ? editingListing.expiry_date.split('T')[0] : ''}
+                      onChange={(e) =>
+                        setEditingListing({ ...editingListing, expiry_date: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Allergy Info</label>
+                    <input
+                      type="text"
+                      value={editingListing.allergy || ''}
+                      onChange={(e) =>
+                        setEditingListing({ ...editingListing, allergy: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Upload New Picture</label>
+                    <input
+                      type="file"
+                      onChange={(e) => setNewImageFile(e.target.files[0])}
+                    />
+                  </div>
+                </form>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={handleCloseEditModal}>
+                Cancel
+              </button>
+              <button className="btn btn-success" onClick={handleSaveEdit}>
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ListingsTabProfile;
+
+This is my ListingsTabProfile.css:
+/* ListingsTabProfile.css */
+.listings-tab-profile {
+    margin: 0 auto;
+    max-width: 800px;
+  }
+  
+  .sub-tabs {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+  
+  .sub-tabs button {
+    background: none;
+    border: none;
+    padding: 0.5rem 1rem;
+    margin: 0 0.5rem;
+    cursor: pointer;
+    font-size: 1rem;
+    border-bottom: 2px solid transparent;
+    color: black;
+  }
+  
+  .sub-tabs button.active {
+    border-bottom: 2px solid red;
+  }
+  
+  .badge {
+    background: #ccc;
+    padding: 0.2rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    margin-left: 0.5rem;
+  }
+  
+  .listings-content {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+  
+
+This is my profileController.js:
+// src/controllers/profileController.js
+const profileModel = require('../models/profileModel');
+
+exports.getUserProfile = async (req, res) => {
+  try {
+    const userInfo = await profileModel.getUserInfo(req.params.id);
+    res.json(userInfo);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.updateUserInfo = async (req, res) => {
+  try {
+    const updatedInfo = await profileModel.updateUserInfo(req.params.id, req.body);
+    res.json(updatedInfo);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getUserStats = async (req, res) => {
+  try {
+    const stats = await profileModel.getUserStats(req.params.id);
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Listings endpoints
+exports.getUserListings = async (req, res) => {
+  try {
+    const listings = await profileModel.getUserListings(req.params.id);
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getReservedListings = async (req, res) => {
+  try {
+    const listings = await profileModel.getListingsByStatus(req.params.id, 'reserved');
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCurrentListings = async (req, res) => {
+  try {
+    const listings = await profileModel.getListingsByStatus(req.params.id, 'available');
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCompletedListings = async (req, res) => {
+  try {
+    const listings = await profileModel.getListingsByStatus(req.params.id, 'completed');
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ... other functions in profileController.js
+
+// For reserved listings: Approve changes status to pending_completion
+exports.approveListing = async (req, res) => {
+    try {
+      // Update status to 'pending_completion'
+      const updated = await profileModel.updateListingStatus(req.params.id, 'pending_completion');
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+  
+  // For pending_completion listings: Mark as completed
+  exports.completeListing = async (req, res) => {
+    try {
+      // Assume the client sends completed_by in the request body
+      const updated = await profileModel.completeListing(req.params.id, req.body.completed_by);
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+  
+  // For pending_completion listings: Unreserve (go back to available)
+  exports.unreserveListing = async (req, res) => {
+    try {
+      const updated = await profileModel.unreserveListing(req.params.id);
+      res.json(updated);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+  
+
+exports.rejectListing = async (req, res) => {
+  try {
+    const updated = await profileModel.updateListingStatus(req.params.id, 'available');
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.editListing = async (req, res) => {
+  try {
+    const updated = await profileModel.editListing(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteListing = async (req, res) => {
+  try {
+    await profileModel.deleteListing(req.params.id);
+    res.json({ message: 'Listing deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Requests endpoints
+exports.getUserRequests = async (req, res) => {
+  try {
+    const requests = await profileModel.getUserRequests(req.params.id);
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getReservedRequests = async (req, res) => {
+  try {
+    const requests = await profileModel.getRequestsByStatus(req.params.id, 'reserved');
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCurrentRequests = async (req, res) => {
+  try {
+    const requests = await profileModel.getRequestsByStatus(req.params.id, 'open');
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCompletedRequests = async (req, res) => {
+  try {
+    const requests = await profileModel.getRequestsByStatus(req.params.id, 'completed');
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.approveRequest = async (req, res) => {
+  try {
+    const updated = await profileModel.updateRequestStatus(req.params.id, 'completed');
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.rejectRequest = async (req, res) => {
+  try {
+    const updated = await profileModel.updateRequestStatus(req.params.id, 'open');
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.editRequest = async (req, res) => {
+  try {
+    const updated = await profileModel.editRequest(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteRequest = async (req, res) => {
+  try {
+    await profileModel.deleteRequest(req.params.id);
+    res.json({ message: 'Request deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Available Listings – only listings with status "available"
+exports.getAvailableListings = async (req, res) => {
+    try {
+      const listings = await profileModel.getListingsByStatus(req.params.id, 'available');
+      res.json(listings);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  };
+  
+
+this is my profileModel.js:
+// src/models/profileModel.js
+const db = require('../config/db');
+
+exports.getUserInfo = async (userId) => {
+  const result = await db.query(
+    'SELECT id, username, email, phone, postal_code FROM users WHERE id = $1',
+    [userId]
+  );
+  return result.rows[0];
+};
+
+exports.updateUserInfo = async (userId, data) => {
+  const { username, email, phone, postal_code } = data;
+  const result = await db.query(
+    `UPDATE users SET username = COALESCE($1, username),
+                       email = COALESCE($2, email),
+                       phone = COALESCE($3, phone),
+                       postal_code = COALESCE($4, postal_code)
+     WHERE id = $5 RETURNING id, username, email, phone, postal_code`,
+    [username, email, phone, postal_code, userId]
+  );
+  return result.rows[0];
+};
+
+exports.getUserStats = async (userId) => {
+  const result = await db.query(
+    'SELECT * FROM user_stats WHERE user_id = $1',
+    [userId]
+  );
+  return result.rows[0];
+};
+
+exports.getUserListings = async (userId) => {
+  const result = await db.query(`
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    WHERE l.user_id = $1
+    ORDER BY l.created_at DESC
+  `, [userId]);
+  return result.rows;
+};
+
+exports.getListingsByStatus = async (userId, status) => {
+  const result = await db.query(`
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    WHERE l.user_id = $1 AND l.status = $2
+    ORDER BY l.created_at DESC
+  `, [userId, status]);
+  return result.rows;
+};
+
+exports.editListing = async (id, data) => {
+  const { item_name, description, type, expiry_date, allergy } = data;
+  const result = await db.query(
+    `UPDATE listings SET 
+       item_name = COALESCE($1, item_name),
+       description = COALESCE($2, description),
+       type = COALESCE($3, type),
+       expiry_date = COALESCE($4, expiry_date),
+       allergy = COALESCE($5, allergy),
+       updated_at = NOW()
+     WHERE id = $6 RETURNING *`,
+    [item_name, description, type, expiry_date, allergy, id]
+  );
+  return result.rows[0];
+};
+
+exports.updateListingStatus = async (id, status) => {
+  const result = await db.query(
+    `UPDATE listings SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+    [status, id]
+  );
+  return result.rows[0];
+};
+
+exports.completeListing = async (id, completedBy) => {
+    const result = await db.query(
+      `UPDATE listings 
+       SET status = 'completed', completed_by = $1, updated_at = NOW() 
+       WHERE id = $2 RETURNING *`,
+      [completedBy, id]
+    );
+    return result.rows[0];
+  };
+  
+  exports.unreserveListing = async (id) => {
+    const result = await db.query(
+      `UPDATE listings 
+       SET status = 'available', reserved_by = NULL, updated_at = NOW() 
+       WHERE id = $1 RETURNING *`,
+      [id]
+    );
+    return result.rows[0];
+  };
+  
+
+exports.deleteListing = async (id) => {
+  await db.query('DELETE FROM listings WHERE id = $1', [id]);
+};
+
+exports.getUserRequests = async (userId) => {
+  const result = await db.query(`
+    SELECT r.*, u.username AS poster_name
+    FROM requests r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.user_id = $1
+    ORDER BY r.created_at DESC
+  `, [userId]);
+  return result.rows;
+};
+
+exports.getRequestsByStatus = async (userId, status) => {
+  const result = await db.query(`
+    SELECT r.*, u.username AS poster_name
+    FROM requests r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.user_id = $1 AND r.status = $2
+    ORDER BY r.created_at DESC
+  `, [userId, status]);
+  return result.rows;
+};
+
+exports.editRequest = async (id, data) => {
+  const { subject, description, request_date, venue, image_path } = data;
+  const result = await db.query(
+    `UPDATE requests SET 
+       subject = COALESCE($1, subject),
+       description = COALESCE($2, description),
+       request_date = COALESCE($3, request_date),
+       venue = COALESCE($4, venue),
+       image_path = COALESCE($5, image_path),
+       updated_at = NOW()
+     WHERE id = $6 RETURNING *`,
+    [subject, description, request_date, venue, image_path, id]
+  );
+  return result.rows[0];
+};
+
+exports.updateRequestStatus = async (id, status) => {
+  const result = await db.query(
+    `UPDATE requests SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+    [status, id]
+  );
+  return result.rows[0];
+};
+
+exports.deleteRequest = async (id) => {
+  await db.query('DELETE FROM requests WHERE id = $1', [id]);
+};
+
+This is my profileRoutes.js:
+// src/routes/profileRoutes.js
+const express = require('express');
+const router = express.Router();
+const profileController = require('../controllers/profileController');
+
+// My Information
+router.get('/:id/info', profileController.getUserProfile);
+router.put('/:id/info', profileController.updateUserInfo);
+router.get('/:id/stats', profileController.getUserStats);
+
+// My Listings
+router.get('/:id/listings/', profileController.getUserListings);// My Listings – Available
+router.get('/:id/listings/available', profileController.getAvailableListings);
+
+router.get('/:id/listings/reserved', profileController.getReservedListings);
+router.get('/:id/listings/current', profileController.getCurrentListings);
+router.get('/:id/listings/completed', profileController.getCompletedListings);
+router.put('/listing/:id/approve', profileController.approveListing);
+router.put('/listing/:id/reject', profileController.rejectListing);
+router.put('/listing/:id/edit', profileController.editListing);
+router.delete('/listing/:id', profileController.deleteListing);
+
+// My Requests
+router.get('/:id/requests/', profileController.getUserRequests);
+router.get('/:id/requests/reserved', profileController.getReservedRequests);
+router.get('/:id/requests/current', profileController.getCurrentRequests);
+router.get('/:id/requests/completed', profileController.getCompletedRequests);
+router.put('/request/:id/approve', profileController.approveRequest);
+router.put('/request/:id/reject', profileController.rejectRequest);
+router.put('/request/:id/edit', profileController.editRequest);
+router.delete('/request/:id', profileController.deleteRequest);
+
+// For reserved listings: approve (moves to pending_completion)
+router.put('/listing/:id/approve', profileController.approveListing);
+
+// For reserved listings: reject (back to available)
+router.put('/listing/:id/reject', profileController.rejectListing);
+
+// New routes for pending_completion actions:
+router.put('/listing/:id/complete', profileController.completeListing);
+router.put('/listing/:id/unreserve', profileController.unreserveListing);
+
+module.exports = router;
+
+This is my database:
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    postal_code VARCHAR(10) NOT NULL,
+    is_verified BOOLEAN DEFAULT FALSE,
+    otp_code VARCHAR(6),             -- For storing OTP temporarily
+    otp_expires_at TIMESTAMP,        -- For OTP expiration check
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users
+ADD COLUMN latitude NUMERIC,
+ADD COLUMN longitude NUMERIC;
+
+CREATE TABLE user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    total_listings_posted INTEGER DEFAULT 0,
+    total_requests_posted INTEGER DEFAULT 0,
+    listings_fulfilled INTEGER DEFAULT 0,     -- listings by others fulfilled by this user
+    requests_fulfilled INTEGER DEFAULT 0,     -- requests by others fulfilled by this user
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE listings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    image_path VARCHAR(255) NOT NULL,                -- Local path to the uploaded image
+    item_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50) NOT NULL,                       -- e.g., Books, Food, Furniture, etc.
+    expiry_date DATE,                                -- Nullable if not applicable
+    allergy TEXT,                                    -- Nullable if not applicable
+    status VARCHAR(20) DEFAULT 'available',          -- 'available', 'reserved', 'pending completion', 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the listing (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the listing (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+ALTER TABLE listings
+ADD COLUMN approved SMALLINT DEFAULT 0;
+
+
+CREATE TABLE requests (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    request_date DATE NOT NULL,
+    venue VARCHAR(255) NOT NULL,
+    description TEXT,
+    image_path VARCHAR(255),                         -- Optional image for the request
+    status VARCHAR(20) DEFAULT 'open',               -- 'open', 'reserved', or 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the request (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the request (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+ALTER TABLE requests
+ADD COLUMN approved SMALLINT DEFAULT 0;
+
+
+
+INSERT INTO listings (user_id, image_path, item_name, description, type, expiry_date, allergy, status)
+VALUES
+  (2, 'uploads/sample1.jpg', 'Free Books', 'A collection of gently used books available for free.', 'Books', '2025-05-01', NULL, 'available'),
+  (2, 'uploads/sample2.jpg', 'Chair Giveaway', 'Comfortable chairs perfect for community events.', 'Furniture', NULL, NULL, 'available'),
+  (2, 'uploads/sample3.jpg', 'Vintage Record Player', 'An old-school record player in working condition.', 'Electronics', '2025-06-15', NULL, 'available');
+
+INSERT INTO listings (user_id, image_path, item_name, description, type, expiry_date, allergy, status)
+VALUES
+  (2, 'uploads/chocolates.jpg', 'Organic Apples', 'Freshly picked organic apples from a local farm.', 'Food', '2025-04-30', 'None', 'available'),
+  (2, 'uploads/chocolates.jpg', 'Childrens Winter Jackets', 'Warm jackets for kids, sizes range from 5-10 years.', 'Clothes', NULL, NULL, 'reserved'),
+  (2, 'uploads/chocolates.jpg', 'Old Laptop', 'Works fine, just a bit slow. Good for basic tasks.', 'Electronics', NULL, NULL, 'available'),
+  (2, 'uploads/chocolates.jpg', 'Canned Goods Pack', 'Includes canned beans, tomatoes, and corn. Not expired.', 'Food', '2025-08-10', 'Soy', 'completed'),
+  (2, 'uploads/chocolates.jpg', 'Story Books for Kids', 'A collection of bedtime stories for children aged 4-8.', 'Books', NULL, NULL, 'available'),
+  (2, 'uploads/chocolates.jpg', 'Reusable Water Bottles', 'Set of 3 eco-friendly reusable bottles.', 'Home Items', NULL, NULL, 'reserved'),
+  (2, 'uploads/chocolates.jpg', 'Homemade Cookies', 'Freshly baked cookies in different flavors.', 'Food', '2025-04-01', 'Gluten', 'available');
+
+
+
+INSERT INTO requests (user_id, subject, request_date, venue, description, image_path, status)
+VALUES
+  (2, 'Help with Moving Sofa', '2025-04-15', '123 Community Center', 'Need assistance to move a heavy sofa at my place.', 'uploads/request1.jpg', 'open'),
+  (2, 'Math Tutor Needed', '2025-04-20', '456 Community Center', 'Looking for a math tutor for high school level.', NULL, 'open'),
+  (2, 'Gardening Assistance', '2025-05-05', '789 Community Center', 'Need help with seasonal garden maintenance.', 'uploads/request3.jpg', 'open');
+
+INSERT INTO users (
+  id, username, password_hash, email, phone, postal_code, is_verified
+) VALUES (
+  4, 'tampines_user', 'hashed_password_here', 'tampines@example.com', '98765432', '520201', TRUE
+);
+INSERT INTO listings (
+  user_id, image_path, item_name, description, type, expiry_date, allergy
+) VALUES
+-- Listing 1
+(4, 'uploads/chocolates.jpg', 'Dining Table Set', 'Used wooden dining table, seats 4.', 'Furniture', '2025-04-15', NULL),
+
+-- Listing 2
+(4, 'uploads/chocolates.jpg', 'Children Books Bundle', '10 storybooks for kids aged 6–9.', 'Books', NULL, NULL),
+
+-- Listing 3
+(4, 'uploads/chocolates.jpg', 'Surplus Rice Packets', '5kg unopened rice packets, halal-certified.', 'Food', '2025-03-30', 'None');
+
+CREATE TABLE user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    total_listings_posted INTEGER DEFAULT 0,
+    total_requests_posted INTEGER DEFAULT 0,
+    listings_fulfilled INTEGER DEFAULT 0,     -- listings by others fulfilled by this user
+    requests_fulfilled INTEGER DEFAULT 0,     -- requests by others fulfilled by this user
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+Instructions:
+- Now available tab, reserved tab is completed. Do not change these.
+- I want you to do another tab for when the listing status is "pending completion"
+
+'pending_completion' tab will have these features:
+- You can see the listing card.
+- You can see who reserved it using the updated_at TIMESTAMP
+- You got 2 buttons, "completed" or "unreserve"
+- When completed, status will change to completed, fill up completed_by field in the listing entry.
+- When unreserved, status will change to available

@@ -1,0 +1,61 @@
+Summary: 
+so its a website whr ppl arnd ur community (share the same community centre) can post like request or listings that they might require from others, or they can help other ppl if they see their request or lisitng
+
+More Detailed Context:
+
+I require a simple website that has backend frontend and a database, with a API integration. I require it in 4 weeks, so time is not an issue. I have templates of what our group requires and the requirement. When the user first registers the account, he has to input:
+Username (ensure no duplicates)
+Password (min 8 char)
+Email address
+A valid Singapore phone number
+Postal code.
+
+Once registered, an OTP will sent to the phone number for verification, afterwards user will login with username and password. User has the option to also forget the password
+
+User will then be able to view and create request, where the below are required:
+Subject name
+Date of request needed
+Venue
+Description of request
+
+User will also be able to view and create listings, where the below are required:
+A photo of item
+Name of item
+Description of item
+Type of item (Books, food, drinks, clothes, etc)
+Expiry date of item(if applicable)
+Allergy of item(if applicable)
+
+When viewing requests and listings, user should be able to filter the requetsts based on:
+Date posted
+Availability
+Type of item
+Alphabetically
+
+When a request or item has been completed or reserved, the system needs to update this information accordingly
+
+Using this API:
+OneMap Singapore API
+
+Get details about a user’s postal code, such as the nearest community center, to validate or enrich registration.
+Free to use, very relevant for a SG-based app.
+API: https://www.onemap.gov.sg/docs/
+We will be using this. So based on your own postal code, you can view the listings in a radius (lets say 5km radius) around you.
+
+You do need to do mobile OTP yet. 
+
+Backend setup:
+Now, I want to make all the backend functions necessary:
+
+this is my index.js (backend/routes/index.js):
+const express = require('express');
+const router = express.Router();
+
+const authRoutes = require('./authRoutes');
+
+router.use('/auth', authRoutes);
+
+module.exports = router;
+
+I need you to create a Route file, I need you to create a model File for backend/models. I need you to create a Controller file for backend/controllers and update the index.js. Give me all these files. 
+

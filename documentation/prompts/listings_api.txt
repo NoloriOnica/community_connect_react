@@ -1,0 +1,329 @@
+I want to use this API:
+OneMap Singapore API
+
+Get details about a user’s postal code, such as the nearest community center, to validate or enrich registration.
+Free to use, very relevant for a SG-based app.
+API: https://www.onemap.gov.sg/docs/
+
+I want to use this API to find the listings near the postal code of the user.
+
+This is my Database setup:
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    postal_code VARCHAR(10) NOT NULL,
+    is_verified BOOLEAN DEFAULT FALSE,
+    otp_code VARCHAR(6),             -- For storing OTP temporarily
+    otp_expires_at TIMESTAMP,        -- For OTP expiration check
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE listings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    image_path VARCHAR(255) NOT NULL,                -- Local path to the uploaded image
+    item_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50) NOT NULL,                       -- e.g., Books, Food, Furniture, etc.
+    expiry_date DATE,                                -- Nullable if not applicable
+    allergy TEXT,                                    -- Nullable if not applicable
+    status VARCHAR(20) DEFAULT 'available',          -- 'available', 'reserved', or 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the listing (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the listing (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+This is my listingController.js:
+// src/controllers/listingController.js
+const listingModel = require('../models/listingModel');
+
+exports.createListing = async (req, res) => {
+  try {
+    const data = {
+      ...req.body,
+      image_path: req.file?.path || null
+    };
+    const newListing = await listingModel.create(data);
+    res.status(201).json(newListing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getAllListings = async (req, res) => {
+  try {
+    const listings = await listingModel.getAll();
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getListingById = async (req, res) => {
+  try {
+    const listing = await listingModel.getById(req.params.id);
+    if (!listing) return res.status(404).json({ message: 'Listing not found' });
+    res.json(listing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.updateListingStatus = async (req, res) => {
+  try {
+    const updated = await listingModel.updateStatus(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteListing = async (req, res) => {
+  try {
+    await listingModel.delete(req.params.id);
+    res.json({ message: 'Listing deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+This is my listingModel.js:
+// src/models/listingModel.js
+const db = require('../config/db');
+
+exports.create = async (data) => {
+  const { user_id, image_path, item_name, description, type, expiry_date, allergy } = data;
+  const result = await db.query(
+    `INSERT INTO listings 
+     (user_id, image_path, item_name, description, type, expiry_date, allergy)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [user_id, image_path, item_name, description, type, expiry_date, allergy]
+  );
+  return result.rows[0];
+};
+
+exports.getAll = async () => {
+  // Join listings with users table to get poster details
+  const result = await db.query(`
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    ORDER BY l.created_at DESC
+  `);
+  return result.rows;
+};
+
+exports.getById = async (id) => {
+  const result = await db.query(
+    `
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    WHERE l.id = $1
+  `,
+    [id]
+  );
+  return result.rows[0];
+};
+
+exports.updateStatus = async (id, data) => {
+  const { status, reserved_by, completed_by } = data;
+  const result = await db.query(
+    `UPDATE listings SET 
+       status = COALESCE($1, status),
+       reserved_by = COALESCE($2, reserved_by),
+       completed_by = COALESCE($3, completed_by),
+       updated_at = NOW()
+     WHERE id = $4 RETURNING *`,
+    [status, reserved_by, completed_by, id]
+  );
+  return result.rows[0];
+};
+
+exports.delete = async (id) => {
+  await db.query('DELETE FROM listings WHERE id = $1', [id]);
+};
+
+
+This is my listingRoutes.js:
+const express = require('express');
+const router = express.Router();
+const upload = require('../middleware/upload');
+const listingController = require('../controllers/listingController');
+
+router.post('/', upload.single('image'), listingController.createListing);
+router.get('/', listingController.getAllListings);
+router.get('/:id', listingController.getListingById);
+router.put('/:id', listingController.updateListingStatus);
+router.delete('/:id', listingController.deleteListing);
+
+module.exports = router;
+
+
+I also have a middleware folder in the backend. You are to give me the necessary for these 4 files. 
+
+This is my frontend ListingsPage.js:
+// src/pages/ListingsPage.js
+import React, { useEffect, useState } from "react";
+import { Container } from "react-bootstrap";
+import { ListingCard } from "../components/Cards";
+import "./ListingsPage.css";
+
+const ListingsPage = () => {
+  const [listings, setListings] = useState([]);
+  const [filters, setFilters] = useState({
+    type: "",
+    expiry: "",
+    location: "",
+    status: "available", // default filter: show only available listings
+  });
+  const token = localStorage.getItem("token");
+
+  useEffect(() => {
+    fetch(`${process.env.REACT_APP_API_URL}/listings`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    })
+      .then((res) => res.json())
+      .then((data) => setListings(data))
+      .catch((err) => console.error("Error fetching listings:", err));
+  }, [token]);
+
+  // Filtering logic
+  const filteredListings = listings.filter((listing) => {
+    const matchesType = filters.type
+      ? listing.type.toLowerCase().includes(filters.type.toLowerCase())
+      : true;
+    const matchesExpiry = filters.expiry
+      ? listing.expiry_date === filters.expiry
+      : true;
+    const matchesStatus =
+      filters.status && filters.status.toLowerCase() !== "all"
+        ? listing.status.toLowerCase() === filters.status.toLowerCase()
+        : true;
+    // Location filter placeholder (to be implemented)
+    const matchesLocation = filters.location ? true : true;
+    return matchesType && matchesExpiry && matchesStatus && matchesLocation;
+  });
+
+  // Handle filter changes
+  const handleFilterChange = (e) => {
+    setFilters({ ...filters, [e.target.name]: e.target.value });
+  };
+
+  return (
+    <div className="listings-page">
+      <Container className="listings-container">
+        <h2 className="page-title">Listings</h2>
+        <div className="filters-section">
+          <input
+            type="text"
+            name="type"
+            placeholder="Filter by Type"
+            value={filters.type}
+            onChange={handleFilterChange}
+          />
+          <input
+            type="date"
+            name="expiry"
+            placeholder="Filter by Expiry Date"
+            value={filters.expiry}
+            onChange={handleFilterChange}
+          />
+          <input
+            type="text"
+            name="location"
+            placeholder="Filter by Location"
+            value={filters.location}
+            onChange={handleFilterChange}
+          />
+          <select
+            name="status"
+            value={filters.status}
+            onChange={handleFilterChange}
+          >
+            <option value="available">Available</option>
+            <option value="reserved">Reserved</option>
+            <option value="completed">Completed</option>
+            <option value="all">All</option>
+          </select>
+        </div>
+        <div className="listings-grid">
+          {filteredListings.map((listing) => {
+            const imageUrl = `${process.env.REACT_APP_API_URL}/${listing.image_path}`;
+            console.log("🔍 Image URL:", imageUrl);
+
+            return (
+              <ListingCard
+                key={listing.id}
+                image={imageUrl}
+                title={listing.item_name}
+                description={listing.description}
+                type={listing.type}
+                expiry={listing.expiry_date}
+                status={listing.status}
+                createdAt={listing.created_at}
+                posterName={listing.poster_name || "Unknown"}
+                postalCode={listing.postal_code || "N/A"}
+              />
+            );
+          })}
+        </div>
+      </Container>
+    </div>
+  );
+};
+
+export default ListingsPage;
+
+This is my css file for this page:
+/* src/pages/ListingsPage.css */
+
+/* Background that complements pastel red */
+.listings-page {
+    min-height: 100vh;
+    padding: 2rem 0;
+    background: linear-gradient(to right, var(--background-color), #ffffff);
+  }
+  
+  /* Container with side margins */
+  .listings-container {
+    margin: 0 2rem;
+  }
+  
+  /* Page title styling */
+  .page-title {
+    text-align: center;
+    color: var(--primary-color);
+    margin-bottom: 2rem;
+    font-weight: bold;
+  }
+  
+  /* Filters section styles */
+  .filters-section {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-bottom: 2rem;
+  }
+  .filters-section input,
+  .filters-section select {
+    padding: 0.5rem;
+    border: 1px solid var(--secondary-color);
+    border-radius: 4px;
+  }
+  
+  /* CSS Grid to arrange the cards */
+.listings-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr); /* Fixed 4 per row */
+    gap: 1.5rem;
+  }
+  
+I need you to make this functionality where one of the filters is a slider to change the radius. Based on the user postal code, it will filter the listings. The api call and calculation of the radius will be done in the backend. How do i do this.

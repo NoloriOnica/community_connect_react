@@ -1,0 +1,45 @@
+Use OneMapAPI:
+- Get OneMapAPI to work (DONE)
+
+TABLES:
+Create a Stats Table to track like how many listings/requests completed (DONE)
+Add a approved column: (0,1,2,3), 0: Approval not sent, 1: Pending Approval, 2: Rejected, 3: Accepted for both Requests and Listings Table. (DONE)
+
+LISTINGS: (DONE)
+- Distance Field should correctly Filter (DONE)
+- Add a Search bar (DONE)
+- Clean up the whole Filters Section (DONE??)
+- Only Available listings should have reserve button (DONE)
+- User should not be able to see their own listings (DONE)
+- Add a Add Listing Button with a popup to fill up the add listing. (DONE)
+- Add listing should do input validations.
+Others Profile PopUp:
+- Create a component for this pop up. Add it to Listings. (DONE)
+
+PROFILE: 
+- Tabs: My Information, My Listings, My Requests
+
+My Information: (DONE)
+- Edit Information (DONE)
+- Stats (DONE)
+
+My Listings: (DONE)
+- Reserved Listings 
+    - Show my listings that others have reserved
+    - Have a badge on this tab to show how many
+    - Allow to Approve or Reject
+- Current Listings 
+    - Show my listings that I posted but no one have reserved
+    - Allow to Edit Listings and Delete Listings
+- Completed Listings
+    - Show my listings that have been completed
+
+- ONLY SHOW THE SPECIFIC USER'S LISTINGS
+
+RESERVED LISTINGS & REQUESTS:
+Tabs: Reserved Listings, Reserved Requests
+Reserved Listings:
+- Show others Listings that i have reserved and its status
+
+Completed Listings:
+- Show others listings where I completed it.

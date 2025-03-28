@@ -1,0 +1,1380 @@
+This is my profileController.js:
+// src/controllers/profileController.js
+const profileModel = require('../models/profileModel');
+
+exports.getUserProfile = async (req, res) => {
+  try {
+    const userInfo = await profileModel.getUserInfo(req.params.id);
+    res.json(userInfo);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.updateUserInfo = async (req, res) => {
+  try {
+    const updatedInfo = await profileModel.updateUserInfo(req.params.id, req.body);
+    res.json(updatedInfo);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getUserStats = async (req, res) => {
+  try {
+    const stats = await profileModel.getUserStats(req.params.id);
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Listings endpoints
+exports.getUserListings = async (req, res) => {
+  try {
+    const listings = await profileModel.getUserListings(req.params.id);
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getReservedListings = async (req, res) => {
+  try {
+    const listings = await profileModel.getListingsByStatus(req.params.id, 'reserved');
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCurrentListings = async (req, res) => {
+  try {
+    const listings = await profileModel.getListingsByStatus(req.params.id, 'available');
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCompletedListings = async (req, res) => {
+  try {
+    const listings = await profileModel.getListingsByStatus(req.params.id, 'completed');
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.approveListing = async (req, res) => {
+  try {
+    const updated = await profileModel.updateListingStatus(req.params.id, 'completed');
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.rejectListing = async (req, res) => {
+  try {
+    const updated = await profileModel.updateListingStatus(req.params.id, 'available');
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.editListing = async (req, res) => {
+  try {
+    const updated = await profileModel.editListing(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteListing = async (req, res) => {
+  try {
+    await profileModel.deleteListing(req.params.id);
+    res.json({ message: 'Listing deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Requests endpoints
+exports.getUserRequests = async (req, res) => {
+  try {
+    const requests = await profileModel.getUserRequests(req.params.id);
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getReservedRequests = async (req, res) => {
+  try {
+    const requests = await profileModel.getRequestsByStatus(req.params.id, 'reserved');
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCurrentRequests = async (req, res) => {
+  try {
+    const requests = await profileModel.getRequestsByStatus(req.params.id, 'open');
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getCompletedRequests = async (req, res) => {
+  try {
+    const requests = await profileModel.getRequestsByStatus(req.params.id, 'completed');
+    res.json(requests);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.approveRequest = async (req, res) => {
+  try {
+    const updated = await profileModel.updateRequestStatus(req.params.id, 'completed');
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.rejectRequest = async (req, res) => {
+  try {
+    const updated = await profileModel.updateRequestStatus(req.params.id, 'open');
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.editRequest = async (req, res) => {
+  try {
+    const updated = await profileModel.editRequest(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteRequest = async (req, res) => {
+  try {
+    await profileModel.deleteRequest(req.params.id);
+    res.json({ message: 'Request deleted successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+This is my profileModel.js:
+// src/models/profileModel.js
+const db = require('../config/db');
+
+exports.getUserInfo = async (userId) => {
+  const result = await db.query(
+    'SELECT id, username, email, phone, postal_code FROM users WHERE id = $1',
+    [userId]
+  );
+  return result.rows[0];
+};
+
+exports.updateUserInfo = async (userId, data) => {
+  const { username, email, phone, postal_code } = data;
+  const result = await db.query(
+    `UPDATE users SET username = COALESCE($1, username),
+                       email = COALESCE($2, email),
+                       phone = COALESCE($3, phone),
+                       postal_code = COALESCE($4, postal_code)
+     WHERE id = $5 RETURNING id, username, email, phone, postal_code`,
+    [username, email, phone, postal_code, userId]
+  );
+  return result.rows[0];
+};
+
+exports.getUserStats = async (userId) => {
+  const result = await db.query(
+    'SELECT * FROM user_stats WHERE user_id = $1',
+    [userId]
+  );
+  return result.rows[0];
+};
+
+exports.getUserListings = async (userId) => {
+  const result = await db.query(`
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    WHERE l.user_id = $1
+    ORDER BY l.created_at DESC
+  `, [userId]);
+  return result.rows;
+};
+
+exports.getListingsByStatus = async (userId, status) => {
+  const result = await db.query(`
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    WHERE l.user_id = $1 AND l.status = $2
+    ORDER BY l.created_at DESC
+  `, [userId, status]);
+  return result.rows;
+};
+
+exports.editListing = async (id, data) => {
+  const { item_name, description, type, expiry_date, allergy } = data;
+  const result = await db.query(
+    `UPDATE listings SET 
+       item_name = COALESCE($1, item_name),
+       description = COALESCE($2, description),
+       type = COALESCE($3, type),
+       expiry_date = COALESCE($4, expiry_date),
+       allergy = COALESCE($5, allergy),
+       updated_at = NOW()
+     WHERE id = $6 RETURNING *`,
+    [item_name, description, type, expiry_date, allergy, id]
+  );
+  return result.rows[0];
+};
+
+exports.updateListingStatus = async (id, status) => {
+  const result = await db.query(
+    `UPDATE listings SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+    [status, id]
+  );
+  return result.rows[0];
+};
+
+exports.deleteListing = async (id) => {
+  await db.query('DELETE FROM listings WHERE id = $1', [id]);
+};
+
+exports.getUserRequests = async (userId) => {
+  const result = await db.query(`
+    SELECT r.*, u.username AS poster_name
+    FROM requests r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.user_id = $1
+    ORDER BY r.created_at DESC
+  `, [userId]);
+  return result.rows;
+};
+
+exports.getRequestsByStatus = async (userId, status) => {
+  const result = await db.query(`
+    SELECT r.*, u.username AS poster_name
+    FROM requests r
+    JOIN users u ON r.user_id = u.id
+    WHERE r.user_id = $1 AND r.status = $2
+    ORDER BY r.created_at DESC
+  `, [userId, status]);
+  return result.rows;
+};
+
+exports.editRequest = async (id, data) => {
+  const { subject, description, request_date, venue, image_path } = data;
+  const result = await db.query(
+    `UPDATE requests SET 
+       subject = COALESCE($1, subject),
+       description = COALESCE($2, description),
+       request_date = COALESCE($3, request_date),
+       venue = COALESCE($4, venue),
+       image_path = COALESCE($5, image_path),
+       updated_at = NOW()
+     WHERE id = $6 RETURNING *`,
+    [subject, description, request_date, venue, image_path, id]
+  );
+  return result.rows[0];
+};
+
+exports.updateRequestStatus = async (id, status) => {
+  const result = await db.query(
+    `UPDATE requests SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+    [status, id]
+  );
+  return result.rows[0];
+};
+
+exports.deleteRequest = async (id) => {
+  await db.query('DELETE FROM requests WHERE id = $1', [id]);
+};
+
+This is my profileRoutes.js:
+// src/routes/profileRoutes.js
+const express = require('express');
+const router = express.Router();
+const profileController = require('../controllers/profileController');
+
+// My Information
+router.get('/:id/info', profileController.getUserProfile);
+router.put('/:id/info', profileController.updateUserInfo);
+router.get('/:id/stats', profileController.getUserStats);
+
+// My Listings
+router.get('/:id/listings', profileController.getUserListings);
+router.get('/:id/listings/reserved', profileController.getReservedListings);
+router.get('/:id/listings/current', profileController.getCurrentListings);
+router.get('/:id/listings/completed', profileController.getCompletedListings);
+router.put('/listing/:id/approve', profileController.approveListing);
+router.put('/listing/:id/reject', profileController.rejectListing);
+router.put('/listing/:id/edit', profileController.editListing);
+router.delete('/listing/:id', profileController.deleteListing);
+
+// My Requests
+router.get('/:id/requests', profileController.getUserRequests);
+router.get('/:id/requests/reserved', profileController.getReservedRequests);
+router.get('/:id/requests/current', profileController.getCurrentRequests);
+router.get('/:id/requests/completed', profileController.getCompletedRequests);
+router.put('/request/:id/approve', profileController.approveRequest);
+router.put('/request/:id/reject', profileController.rejectRequest);
+router.put('/request/:id/edit', profileController.editRequest);
+router.delete('/request/:id', profileController.deleteRequest);
+
+module.exports = router;
+
+This is my ProfilePage.js:
+// src/pages/ProfilePage.js
+import React, { useState, useEffect } from 'react';
+import { Container, Button, Badge, Form } from 'react-bootstrap';
+import './ProfilePage.css';
+import UserInfoCard from '../components/UserInfoCard';
+
+
+const ProfilePage = () => {
+  const storedUser = JSON.parse(localStorage.getItem('user'));
+  const userId = storedUser?.userId;
+  console.log(userId)
+  const token = localStorage.getItem('token');
+
+  // Main tab state: "info", "listings", "requests"
+  const [activeTab, setActiveTab] = useState("info");
+
+  // Info & Stats state
+  const [userInfo, setUserInfo] = useState({});
+  const [userStats, setUserStats] = useState({});
+  const [editMode, setEditMode] = useState(false);
+  const [editInfo, setEditInfo] = useState({});
+
+  // Listings states (sub-tabs)
+  const [reservedListings, setReservedListings] = useState([]);
+  const [currentListings, setCurrentListings] = useState([]);
+  const [completedListings, setCompletedListings] = useState([]);
+  const [listingsSubTab, setListingsSubTab] = useState("reserved");
+
+  // Requests states (sub-tabs)
+  const [reservedRequests, setReservedRequests] = useState([]);
+  const [currentRequests, setCurrentRequests] = useState([]);
+  const [completedRequests, setCompletedRequests] = useState([]);
+  const [requestsSubTab, setRequestsSubTab] = useState("reserved");
+
+  // Fetch user info and stats on mount
+  useEffect(() => {
+    const fetchUserInfo = async () => {
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/${userId}/info`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        setUserInfo(data);
+        setEditInfo(data);
+      } catch (err) {
+        console.error("Error fetching user info", err);
+      }
+    };
+
+    const fetchUserStats = async () => {
+      try {
+        const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/${userId}/stats`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const data = await res.json();
+        setUserStats(data);
+      } catch (err) {
+        console.error("Error fetching user stats", err);
+      }
+    };
+
+    if (userId) {
+      fetchUserInfo();
+      fetchUserStats();
+    }
+  }, [userId, token]);
+
+  // Fetch Listings based on sub‑tab selection
+  useEffect(() => {
+    if (activeTab === "listings" && userId) {
+      let endpoint = "";
+      if (listingsSubTab === "reserved") {
+        endpoint = `${process.env.REACT_APP_API_URL}/profile/${userId}/listings/reserved`;
+      } else if (listingsSubTab === "current") {
+        endpoint = `${process.env.REACT_APP_API_URL}/profile/${userId}/listings/current`;
+      } else if (listingsSubTab === "completed") {
+        endpoint = `${process.env.REACT_APP_API_URL}/profile/${userId}/listings/completed`;
+      }
+      const fetchListings = async () => {
+        try {
+          const res = await fetch(endpoint, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (listingsSubTab === "reserved") setReservedListings(data);
+          else if (listingsSubTab === "current") setCurrentListings(data);
+          else if (listingsSubTab === "completed") setCompletedListings(data);
+        } catch (err) {
+          console.error("Error fetching listings", err);
+        }
+      };
+      fetchListings();
+    }
+  }, [activeTab, listingsSubTab, userId, token]);
+
+  // Fetch Requests based on sub‑tab selection
+  useEffect(() => {
+    if (activeTab === "requests" && userId) {
+      let endpoint = "";
+      if (requestsSubTab === "reserved") {
+        endpoint = `${process.env.REACT_APP_API_URL}/profile/${userId}/requests/reserved`;
+      } else if (requestsSubTab === "current") {
+        endpoint = `${process.env.REACT_APP_API_URL}/profile/${userId}/requests/current`;
+      } else if (requestsSubTab === "completed") {
+        endpoint = `${process.env.REACT_APP_API_URL}/profile/${userId}/requests/completed`;
+      }
+      const fetchRequests = async () => {
+        try {
+          const res = await fetch(endpoint, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const data = await res.json();
+          if (requestsSubTab === "reserved") setReservedRequests(data);
+          else if (requestsSubTab === "current") setCurrentRequests(data);
+          else if (requestsSubTab === "completed") setCompletedRequests(data);
+        } catch (err) {
+          console.error("Error fetching requests", err);
+        }
+      };
+      fetchRequests();
+    }
+  }, [activeTab, requestsSubTab, userId, token]);
+
+  // Handlers for Info editing
+  const handleEditToggle = () => {
+    setEditMode(!editMode);
+  };
+
+  const handleInfoChange = (e) => {
+    setEditInfo({ ...editInfo, [e.target.name]: e.target.value });
+  };
+
+  const handleInfoSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/${userId}/info`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(editInfo)
+      });
+      const data = await res.json();
+      setUserInfo(data);
+      setEditMode(false);
+    } catch (err) {
+      console.error("Error updating info", err);
+    }
+  };
+
+  // Handlers for Listings actions
+  const handleApproveListing = async (listingId) => {
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/listing/${listingId}/approve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setReservedListings(prev =>
+        prev.map(item => item.id === data.id ? data : item)
+      );
+    } catch (err) {
+      console.error("Error approving listing", err);
+    }
+  };
+
+  const handleRejectListing = async (listingId) => {
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/listing/${listingId}/reject`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setReservedListings(prev =>
+        prev.map(item => item.id === data.id ? data : item)
+      );
+    } catch (err) {
+      console.error("Error rejecting listing", err);
+    }
+  };
+
+  const handleDeleteListing = async (listingId) => {
+    try {
+      await fetch(`${process.env.REACT_APP_API_URL}/profile/listing/${listingId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCurrentListings(prev => prev.filter(item => item.id !== listingId));
+    } catch (err) {
+      console.error("Error deleting listing", err);
+    }
+  };
+
+  // (Edit functionality would normally launch a modal or inline form)
+  const handleEditListing = async (listingId, updatedData) => {
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/listing/${listingId}/edit`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(updatedData)
+      });
+      const data = await res.json();
+      setCurrentListings(prev =>
+        prev.map(item => item.id === data.id ? data : item)
+      );
+    } catch (err) {
+      console.error("Error editing listing", err);
+    }
+  };
+
+  // Handlers for Requests actions
+  const handleApproveRequest = async (requestId) => {
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/request/${requestId}/approve`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setReservedRequests(prev =>
+        prev.map(item => item.id === data.id ? data : item)
+      );
+    } catch (err) {
+      console.error("Error approving request", err);
+    }
+  };
+
+  const handleRejectRequest = async (requestId) => {
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/request/${requestId}/reject`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setReservedRequests(prev =>
+        prev.map(item => item.id === data.id ? data : item)
+      );
+    } catch (err) {
+      console.error("Error rejecting request", err);
+    }
+  };
+
+  const handleDeleteRequest = async (requestId) => {
+    try {
+      await fetch(`${process.env.REACT_APP_API_URL}/profile/request/${requestId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCurrentRequests(prev => prev.filter(item => item.id !== requestId));
+    } catch (err) {
+      console.error("Error deleting request", err);
+    }
+  };
+
+  const handleEditRequest = async (requestId, updatedData) => {
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/request/${requestId}/edit`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(updatedData)
+      });
+      const data = await res.json();
+      setCurrentRequests(prev =>
+        prev.map(item => item.id === data.id ? data : item)
+      );
+    } catch (err) {
+      console.error("Error editing request", err);
+    }
+  };
+
+  return (
+    <Container className="profile-page">
+      <h2 className="page-title">My Profile</h2>
+      <div className="tabs">
+        <button className={activeTab === "info" ? "active" : ""} onClick={() => setActiveTab("info")}>
+          My Information
+        </button>
+        <button className={activeTab === "listings" ? "active" : ""} onClick={() => setActiveTab("listings")}>
+          My Listings
+        </button>
+        <button className={activeTab === "requests" ? "active" : ""} onClick={() => setActiveTab("requests")}>
+          My Requests
+        </button>
+      </div>
+
+        {activeTab === "info" && (
+        <div className="info-section">
+            <UserInfoCard
+            userInfo={userInfo}
+            status="private"
+            
+            updateInfo={async (newData) => {
+                try {
+                const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/${userId}/info`, {
+                    method: 'PUT',
+                    headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`
+                    },
+                    body: JSON.stringify(newData)
+                });
+                const updated = await res.json();
+                setUserInfo(updated);
+                } catch (err) {
+                console.error("Error updating info", err);
+                }
+            }}
+            />
+
+        </div>
+        )}
+
+      {activeTab === "listings" && (
+        <div className="listings-section">
+          <div className="sub-tabs">
+            <button
+              className={listingsSubTab === "reserved" ? "active" : ""}
+              onClick={() => setListingsSubTab("reserved")}
+            >
+              Reserved Listings <Badge bg="secondary">{reservedListings.length}</Badge>
+            </button>
+            <button
+              className={listingsSubTab === "current" ? "active" : ""}
+              onClick={() => setListingsSubTab("current")}
+            >
+              Current Listings
+            </button>
+            <button
+              className={listingsSubTab === "completed" ? "active" : ""}
+              onClick={() => setListingsSubTab("completed")}
+            >
+              Completed Listings
+            </button>
+          </div>
+          <div className="listings-content">
+            {listingsSubTab === "reserved" && reservedListings.map(listing => (
+              <div key={listing.id} className="item-card">
+                <h4>{listing.item_name}</h4>
+                <p>{listing.description}</p>
+                <div className="actions">
+                  <Button variant="success" onClick={() => handleApproveListing(listing.id)}>Approve</Button>
+                  <Button variant="danger" onClick={() => handleRejectListing(listing.id)}>Reject</Button>
+                </div>
+              </div>
+            ))}
+            {listingsSubTab === "current" && currentListings.map(listing => (
+              <div key={listing.id} className="item-card">
+                <h4>{listing.item_name}</h4>
+                <p>{listing.description}</p>
+                <div className="actions">
+                  <Button variant="warning" onClick={() => {
+                    const updatedData = prompt("Enter new title:", listing.item_name);
+                    if (updatedData) handleEditListing(listing.id, { item_name: updatedData });
+                  }}>Edit</Button>
+                  <Button variant="danger" onClick={() => handleDeleteListing(listing.id)}>Delete</Button>
+                </div>
+              </div>
+            ))}
+            {listingsSubTab === "completed" && completedListings.map(listing => (
+              <div key={listing.id} className="item-card">
+                <h4>{listing.item_name}</h4>
+                <p>{listing.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {activeTab === "requests" && (
+        <div className="requests-section">
+          <div className="sub-tabs">
+            <button
+              className={requestsSubTab === "reserved" ? "active" : ""}
+              onClick={() => setRequestsSubTab("reserved")}
+            >
+              Reserved Requests <Badge bg="secondary">{reservedRequests.length}</Badge>
+            </button>
+            <button
+              className={requestsSubTab === "current" ? "active" : ""}
+              onClick={() => setRequestsSubTab("current")}
+            >
+              Current Requests
+            </button>
+            <button
+              className={requestsSubTab === "completed" ? "active" : ""}
+              onClick={() => setRequestsSubTab("completed")}
+            >
+              Completed Requests
+            </button>
+          </div>
+          <div className="requests-content">
+            {requestsSubTab === "reserved" && reservedRequests.map(request => (
+              <div key={request.id} className="item-card">
+                <h4>{request.subject}</h4>
+                <p>{request.description}</p>
+                <div className="actions">
+                  <Button variant="success" onClick={() => handleApproveRequest(request.id)}>Approve</Button>
+                  <Button variant="danger" onClick={() => handleRejectRequest(request.id)}>Reject</Button>
+                </div>
+              </div>
+            ))}
+            {requestsSubTab === "current" && currentRequests.map(request => (
+              <div key={request.id} className="item-card">
+                <h4>{request.subject}</h4>
+                <p>{request.description}</p>
+                <div className="actions">
+                  <Button variant="warning" onClick={() => {
+                    const updatedData = prompt("Enter new subject:", request.subject);
+                    if (updatedData) handleEditRequest(request.id, { subject: updatedData });
+                  }}>Edit</Button>
+                  <Button variant="danger" onClick={() => handleDeleteRequest(request.id)}>Delete</Button>
+                </div>
+              </div>
+            ))}
+            {requestsSubTab === "completed" && completedRequests.map(request => (
+              <div key={request.id} className="item-card">
+                <h4>{request.subject}</h4>
+                <p>{request.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Container>
+  );
+};
+
+export default ProfilePage;
+
+This is my ProfilePage.css:
+/* src/pages/ProfilePage.css */
+.profile-page {
+    padding: 2rem;
+    background: linear-gradient(to right, var(--background-color), #ffffff);
+    min-height: 100vh;
+  }
+  
+  .page-title {
+    text-align: center;
+    color: var(--primary-color);
+    margin-bottom: 1.5rem;
+    font-weight: bold;
+  }
+  
+  /* Main tabs styled as rectangle boxes */
+  .tabs {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 2rem;
+  }
+  
+  .tabs button {
+    background: var(--secondary-color);
+    border: 1px solid #ccc;
+    padding: 0.5rem 1rem;
+    margin: 0 0.5rem;
+    font-size: 1.1rem;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  
+  .tabs button.active {
+    background: var(--primary-color);
+    color: #fff;
+    border: 1px solid var(--primary-color);
+    font-weight: bold;
+  }
+  
+  /* Info and stats section */
+  .info-section,
+  .listings-section,
+  .requests-section {
+    margin: 0 auto;
+    max-width: 800px;
+  }
+  
+  .info-display p {
+    font-size: 1rem;
+    margin: 0.5rem 0;
+  }
+  
+  /* Cute stats boxes */
+  .stats-section {
+    margin-top: 2rem;
+    background-color: #fff7e6;
+    padding: 1rem;
+    border: 1px solid #ffd699;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+  
+  /* Sub-tabs with black text and red underline for active */
+  .sub-tabs {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+  }
+  
+  .sub-tabs button {
+    background: none;
+    border: none;
+    padding: 0.5rem 1rem;
+    margin: 0 0.5rem;
+    cursor: pointer;
+    color: black;
+    font-size: 1rem;
+  }
+  
+  .sub-tabs button.active {
+    border-bottom: 2px solid red;
+  }
+  
+  /* Item card styling */
+  .item-card {
+    background-color: #ffffff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .item-card h4 {
+    margin-bottom: 0.5rem;
+  }
+  
+  .item-card p {
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .item-card .actions button {
+    margin-right: 0.5rem;
+  }
+  
+This is my Database schema:
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    postal_code VARCHAR(10) NOT NULL,
+    is_verified BOOLEAN DEFAULT FALSE,
+    otp_code VARCHAR(6),             -- For storing OTP temporarily
+    otp_expires_at TIMESTAMP,        -- For OTP expiration check
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users
+ADD COLUMN latitude NUMERIC,
+ADD COLUMN longitude NUMERIC;
+
+CREATE TABLE user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    total_listings_posted INTEGER DEFAULT 0,
+    total_requests_posted INTEGER DEFAULT 0,
+    listings_fulfilled INTEGER DEFAULT 0,     -- listings by others fulfilled by this user
+    requests_fulfilled INTEGER DEFAULT 0,     -- requests by others fulfilled by this user
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE listings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    image_path VARCHAR(255) NOT NULL,                -- Local path to the uploaded image
+    item_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50) NOT NULL,                       -- e.g., Books, Food, Furniture, etc.
+    expiry_date DATE,                                -- Nullable if not applicable
+    allergy TEXT,                                    -- Nullable if not applicable
+    status VARCHAR(20) DEFAULT 'available',          -- 'available', 'reserved', 'pending completion', 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the listing (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the listing (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+ALTER TABLE listings
+ADD COLUMN approved SMALLINT DEFAULT 0;
+
+
+CREATE TABLE requests (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    request_date DATE NOT NULL,
+    venue VARCHAR(255) NOT NULL,
+    description TEXT,
+    image_path VARCHAR(255),                         -- Optional image for the request
+    status VARCHAR(20) DEFAULT 'open',               -- 'open', 'reserved', or 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the request (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the request (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+ALTER TABLE requests
+ADD COLUMN approved SMALLINT DEFAULT 0;
+
+
+
+INSERT INTO listings (user_id, image_path, item_name, description, type, expiry_date, allergy, status)
+VALUES
+  (2, 'uploads/sample1.jpg', 'Free Books', 'A collection of gently used books available for free.', 'Books', '2025-05-01', NULL, 'available'),
+  (2, 'uploads/sample2.jpg', 'Chair Giveaway', 'Comfortable chairs perfect for community events.', 'Furniture', NULL, NULL, 'available'),
+  (2, 'uploads/sample3.jpg', 'Vintage Record Player', 'An old-school record player in working condition.', 'Electronics', '2025-06-15', NULL, 'available');
+
+INSERT INTO listings (user_id, image_path, item_name, description, type, expiry_date, allergy, status)
+VALUES
+  (2, 'uploads/chocolates.jpg', 'Organic Apples', 'Freshly picked organic apples from a local farm.', 'Food', '2025-04-30', 'None', 'available'),
+  (2, 'uploads/chocolates.jpg', 'Childrens Winter Jackets', 'Warm jackets for kids, sizes range from 5-10 years.', 'Clothes', NULL, NULL, 'reserved'),
+  (2, 'uploads/chocolates.jpg', 'Old Laptop', 'Works fine, just a bit slow. Good for basic tasks.', 'Electronics', NULL, NULL, 'available'),
+  (2, 'uploads/chocolates.jpg', 'Canned Goods Pack', 'Includes canned beans, tomatoes, and corn. Not expired.', 'Food', '2025-08-10', 'Soy', 'completed'),
+  (2, 'uploads/chocolates.jpg', 'Story Books for Kids', 'A collection of bedtime stories for children aged 4-8.', 'Books', NULL, NULL, 'available'),
+  (2, 'uploads/chocolates.jpg', 'Reusable Water Bottles', 'Set of 3 eco-friendly reusable bottles.', 'Home Items', NULL, NULL, 'reserved'),
+  (2, 'uploads/chocolates.jpg', 'Homemade Cookies', 'Freshly baked cookies in different flavors.', 'Food', '2025-04-01', 'Gluten', 'available');
+
+
+
+INSERT INTO requests (user_id, subject, request_date, venue, description, image_path, status)
+VALUES
+  (2, 'Help with Moving Sofa', '2025-04-15', '123 Community Center', 'Need assistance to move a heavy sofa at my place.', 'uploads/request1.jpg', 'open'),
+  (2, 'Math Tutor Needed', '2025-04-20', '456 Community Center', 'Looking for a math tutor for high school level.', NULL, 'open'),
+  (2, 'Gardening Assistance', '2025-05-05', '789 Community Center', 'Need help with seasonal garden maintenance.', 'uploads/request3.jpg', 'open');
+
+INSERT INTO users (
+  id, username, password_hash, email, phone, postal_code, is_verified
+) VALUES (
+  4, 'tampines_user', 'hashed_password_here', 'tampines@example.com', '98765432', '520201', TRUE
+);
+INSERT INTO listings (
+  user_id, image_path, item_name, description, type, expiry_date, allergy
+) VALUES
+-- Listing 1
+(4, 'uploads/chocolates.jpg', 'Dining Table Set', 'Used wooden dining table, seats 4.', 'Furniture', '2025-04-15', NULL),
+
+-- Listing 2
+(4, 'uploads/chocolates.jpg', 'Children Books Bundle', '10 storybooks for kids aged 6–9.', 'Books', NULL, NULL),
+
+-- Listing 3
+(4, 'uploads/chocolates.jpg', 'Surplus Rice Packets', '5kg unopened rice packets, halal-certified.', 'Food', '2025-03-30', 'None');
+
+CREATE TABLE user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    total_listings_posted INTEGER DEFAULT 0,
+    total_requests_posted INTEGER DEFAULT 0,
+    listings_fulfilled INTEGER DEFAULT 0,     -- listings by others fulfilled by this user
+    requests_fulfilled INTEGER DEFAULT 0,     -- requests by others fulfilled by this user
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+This is my Cards.js component for your reference.:
+// src/components/Cards.js
+import React, { useState } from 'react';
+import { Card, Button, Spinner } from 'react-bootstrap';
+import UserInfoCard from './UserInfoCard';
+import './Cards.css';
+
+const getStatusStyle = (status) => {
+  const s = status.toLowerCase();
+  if (s === 'available') return { color: 'green' };
+  if (s === 'reserved') return { color: 'orange' };
+  if (s === 'completed') return { color: 'red' };
+  return { color: 'black' };
+};
+
+const capitalizeStatus = (status) =>
+  status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+
+export const ListingCard = ({
+  image,
+  title,
+  description,
+  type,
+  expiry,
+  posterName = 'Unknown',
+  postalCode = 'N/A',
+  posterId,
+  status = 'available',
+  createdAt,
+  onReserve,
+}) => {
+  const [showPopup, setShowPopup] = useState(false);
+  const [showUserPopup, setShowUserPopup] = useState(false);
+  const [posterInfo, setPosterInfo] = useState(null);
+  const [loadingPosterInfo, setLoadingPosterInfo] = useState(false);
+
+  const openPopup = () => setShowPopup(true);
+  const closePopup = () => {
+    setShowPopup(false);
+    setShowUserPopup(false);
+  };
+
+  const formattedCreatedAt = createdAt ? new Date(createdAt).toLocaleDateString() : '';
+  const formattedExpiry = expiry ? new Date(expiry).toLocaleDateString() : '';
+
+  const handlePosterClick = async () => {
+    setLoadingPosterInfo(true);
+    try {
+      const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/${posterId}/info`, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      const data = await res.json();
+      setPosterInfo(data);
+      setShowUserPopup(true);
+    } catch (err) {
+      console.error('Failed to fetch poster info:', err);
+    } finally {
+      setLoadingPosterInfo(false);
+    }
+  };
+
+  return (
+    <>
+      <Card className="listing-card mb-4 shadow-sm">
+        <Card.Img variant="top" src={image} className="card-img-top" />
+        <Card.Body>
+          <h3 className="custom-card-title">{title}</h3>
+          <p className="status-text" style={getStatusStyle(status)}>
+            {capitalizeStatus(status)}
+          </p>
+          <Card.Text className="custom-card-text">{description}</Card.Text>
+          <Card.Text className="custom-card-text">
+            <strong>Type:</strong> {type}
+          </Card.Text>
+          {expiry && (
+            <Card.Text className="custom-card-text">
+              <strong>Expiry:</strong> {formattedExpiry}
+            </Card.Text>
+          )}
+        </Card.Body>
+        <Card.Footer className={`card-footer-buttons ${status.toLowerCase() === "available" ? "two-buttons" : "single-button"}`}>
+          {status.toLowerCase() === "available" ? (
+            <>
+              <Button variant="success" className="footer-btn details-btn" onClick={openPopup}>
+                More Details
+              </Button>
+              <Button variant="danger" className="footer-btn reserve-btn" onClick={onReserve}>
+                Reserve
+              </Button>
+            </>
+          ) : (
+            <Button variant="success" className="footer-btn details-btn" onClick={openPopup}>
+              More Details
+            </Button>
+          )}
+        </Card.Footer>
+      </Card>
+
+      {showPopup && (
+        <div className="popup-overlay">
+          <div className="popup-modal">
+            <button className="close-button" onClick={closePopup}>
+              ×
+            </button>
+            <div className="popup-content">
+              <div className="popup-left">
+                <img src={image} alt={title} />
+              </div>
+              <div className="popup-right">
+                <h3 className="popup-item-title">{title}</h3>
+                <p className="status-text" style={getStatusStyle(status)}>
+                  {capitalizeStatus(status)}
+                </p>
+                <p><strong>Description:</strong> {description}</p>
+                <p><strong>Type:</strong> {type}</p>
+                {expiry && <p><strong>Expiry:</strong> {formattedExpiry}</p>}
+                {formattedCreatedAt && <p><strong>Created At:</strong> {formattedCreatedAt}</p>}
+                <p>
+                  <strong>Posted by:</strong>{' '}
+                  <span
+                    className="clickable-poster"
+                    onClick={handlePosterClick}
+                    style={{ textDecoration: 'underline', color: 'blue', cursor: 'pointer' }}
+                  >
+                    {posterName}
+                  </span>
+                </p>
+                <p>
+                  <strong>Postal Code:</strong>{' '}
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${postalCode}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {postalCode}
+                  </a>
+                </p>
+
+                {loadingPosterInfo && <Spinner animation="border" size="sm" />}
+
+                {showUserPopup && posterInfo && (
+                  <div className="poster-popup">
+                    <UserInfoCard userInfo={posterInfo} status="public" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
+
+/* src/components/Cards.css */
+
+/* Card hover effect */
+.card {
+  transition: transform 0.2s ease-in-out;
+}
+.card:hover {
+  transform: scale(1.02);
+  box-shadow: 0 8px 20px var(--shadow-color);
+}
+
+/* Base styling for listing & request cards */
+.listing-card,
+.request-card {
+  background-color: var(--card-bg);
+  border: 1px solid var(--secondary-color);
+  max-width: 350px;
+  margin: 0 auto;
+}
+
+/* Smaller card titles */
+.custom-card-title {
+  font-size: 1.1rem;
+  color: var(--primary-color); /* Pastel red */
+  margin-bottom: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* Status text styling */
+.status-text {
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+}
+
+/* Increased line spacing for card text */
+.custom-card-text {
+  color: var(--text-color);
+  line-height: 1.6;
+  margin-bottom: 0.75rem;
+}
+
+/* Footer buttons container for the card */
+.card-footer-buttons {
+  display: flex;
+  padding: 0;
+}
+
+/* Apply border between buttons only when two buttons are present */
+.card-footer-buttons.two-buttons .footer-btn:first-child {
+  border-right: 1px solid var(--card-bg);
+}
+
+/* Footer buttons styling */
+.card-footer-buttons .footer-btn {
+  flex: 1;
+  border-radius: 0;
+  margin: 0;
+  border: none;
+  transition: box-shadow 0.2s ease-in-out;
+}
+
+/* If only one button is rendered, ensure it spans the full width */
+.card-footer-buttons.single-button .footer-btn {
+  width: 100%;
+}
+
+/* Hover effect for footer buttons */
+.card-footer-buttons .footer-btn:hover {
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Button styles for details and reserve */
+.details-btn {
+  background-color: var(--success-color); /* Green */
+  color: #fff;
+}
+.reserve-btn {
+  background-color: var(--error-color); /* Red */
+  color: #fff;
+}
+
+/* Popup overlay styles */
+.popup-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+/* Popup modal container */
+.popup-modal {
+  background-color: var(--card-bg);
+  border-radius: 8px;
+  width: 90%;
+  max-width: 600px;
+  position: relative;
+  padding: 1rem;
+  box-shadow: 0 8px 20px var(--shadow-color);
+}
+
+/* Close button */
+.close-button {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--primary-color);
+}
+
+/* Popup content layout: image on left, info on right */
+.popup-content {
+  display: flex;
+  flex-wrap: wrap;
+}
+.popup-left,
+.popup-right {
+  flex: 1;
+  padding: 1rem;
+}
+.popup-right p {
+  margin-bottom: 0.5rem;
+}
+.popup-item-title {
+  color: var(--primary-color);
+  font-size: 1.3rem;
+  margin-bottom: 0.5rem;
+}
+
+/* Postal Code link styles */
+.postal-link {
+  color: var(--primary-color);
+  text-decoration: underline;
+}
+.postal-link:visited {
+  color: var(--primary-color);
+}
+
+.listing-card .card-img-top {
+  height: 120px;
+  object-fit: cover;
+  object-position: center;
+  border-bottom: 1px solid var(--secondary-color);
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.popup-left {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.popup-left img {
+  width: 100%;
+  max-height: 300px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.clickable-poster:hover {
+  text-decoration: underline;
+  color: darkblue;
+
+}
+
+This is my theme.css for your coloring reference:
+/* Pastel Theme Colors */
+:root {
+    --primary-color: #FF6961;      /* Pastel Red */
+    --secondary-color: #D3D3D3;    /* Pastel Gray */
+    --success-color: #77DD77;      /* Pastel Green */
+    --error-color: #FFB347;        /* Pastel Orange */
+    --background-color: #FFF5E1;   /* Light Cream */
+    --text-color: #333333;         /* Soft Charcoal */
+    --card-bg: #FFFFFF;            /* Pure White */
+    --shadow-color: rgba(0, 0, 0, 0.1); 
+    --hover-button-color:#ff6923;
+  }
+  
+
+Right now, I have 3 tabs for Listings and requests. I need 4 tabs, one for each status in the listings table. Follow this order, 'available', 'reserved', 'pending_completion', 'completed'. Each of these tabs will contain listings with their respective status. The listings will be a new card component. 
+In this new card component, each card, you must be able to view all the information of the listing. No need for buttons
+
+'available' tab will have these features:
+- You can edit all the information of the listing including the picture. 
+- You can delete the listing.
+- Attach these 2 buttons to the card.
+
+'reserved' tab will have these features:
+- You can see the listing card.
+- You can see who reserved it using the updated_at TIMESTAMP
+- You can approve (green button) or reject (red button).
+- When approved, status will be changed to pending_completion
+- When rejected, status will be changed to available
+
+'pending_completion' tab will have these features:
+- You can see the listing card.
+- You can see who reserved it using the updated_at TIMESTAMP
+- You got 2 buttons, "completed" or "unreserve"
+- When completed, status will change to completed, fill up completed_by field in the listing entry.
+- When unreserved, status will change to available
+
+'completed' tab will have these features:
+- You can see the listing card.
+- You can see who completed it.
+- No buttons or actions. 
+
+Take into account these requirements, give me if there any backend functions in profileController.js, profileModel.js and profileRoutes.js that needs to be edited or newly created.
+Take into account these requirements and give me the full ViewListingCard.js (new component under components folder), ViewListingCard.css, ProfilePage.js and ProfilePage.css

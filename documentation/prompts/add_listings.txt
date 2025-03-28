@@ -1,0 +1,667 @@
+This is my listingController.js:
+// src/controllers/listingController.js
+const listingModel = require('../models/listingModel');
+
+exports.createListing = async (req, res) => {
+  try {
+    const data = {
+      ...req.body,
+      image_path: req.file?.path || null
+    };
+    const newListing = await listingModel.create(data);
+    res.status(201).json(newListing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getAllListings = async (req, res) => {
+  try {
+
+    const listings = await listingModel.getAll();
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getListingById = async (req, res) => {
+  try {
+    const listing = await listingModel.getById(req.params.id);
+    if (!listing) return res.status(404).json({ message: 'Listing not found' });
+    res.json(listing);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// FIXED: Now defined as an Express handler
+exports.getListingsNear = async (req, res) => {
+  try {
+    const { postal_code, radius } = req.query;
+    if (!postal_code || !radius) {
+      return res.status(400).json({ error: 'postal_code and radius are required' });
+    }
+    const listings = await listingModel.getListingsNear(postal_code, Number(radius));
+    res.json(listings);
+  } catch (err) {
+    console.error("Error in getListingsNear:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.updateListingStatus = async (req, res) => {
+  try {
+    const updated = await listingModel.updateStatus(req.params.id, req.body);
+    res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.deleteListing = async (req, res) => {
+  try {
+    await listingModel.delete(req.params.id);
+    res.json({ message: 'Listing deleted' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.searchListings = async (req, res) => {
+  try {
+    const { title } = req.query;
+    if (!title) {
+      return res.status(400).json({ error: 'Title query parameter is required' });
+    }
+    const listings = await listingModel.searchByTitle(title);
+    res.json(listings);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+
+This is my listingModel.js:
+// src/models/listingModel.js
+const db = require('../config/db');
+const oneMapAPI = require('../middleware/oneMapAPI');
+
+exports.create = async (data) => {
+  const { user_id, image_path, item_name, description, type, expiry_date, allergy } = data;
+  const result = await db.query(
+    `INSERT INTO listings 
+     (user_id, image_path, item_name, description, type, expiry_date, allergy)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [user_id, image_path, item_name, description, type, expiry_date, allergy]
+  );
+  return result.rows[0];
+};
+
+exports.getAll = async () => {
+  const result = await db.query(`
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    ORDER BY l.created_at DESC
+  `);
+  return result.rows;
+};
+
+exports.getById = async (id) => {
+  const result = await db.query(
+    `
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    WHERE l.id = $1
+  `,
+    [id]
+  );
+  return result.rows[0];
+};
+
+exports.updateStatus = async (id, data) => {
+  const { status, reserved_by, completed_by } = data;
+  const result = await db.query(
+    `UPDATE listings SET 
+       status = COALESCE($1, status),
+       reserved_by = COALESCE($2, reserved_by),
+       completed_by = COALESCE($3, completed_by),
+       updated_at = NOW()
+     WHERE id = $4 RETURNING *`,
+    [status, reserved_by, completed_by, id]
+  );
+  return result.rows[0];
+};
+
+exports.delete = async (id) => {
+  await db.query('DELETE FROM listings WHERE id = $1', [id]);
+};
+
+// New function: getListingsNear
+exports.getListingsNear = async (userPostalCode, radius) => {
+  // Get coordinates for the user's postal code.
+  const userCoords = await oneMapAPI.getCoordinates(userPostalCode);
+  console.log("User Coordinates:", userCoords);
+  if (!userCoords) {
+    throw new Error('Invalid user postal code');
+  }
+
+  // Get all listings (with poster info and postal codes)
+  const result = await db.query(`
+    SELECT l.*, u.username AS poster_name, u.postal_code
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+  `);
+  const listings = result.rows;
+
+  // Cache for postal code coordinates.
+  const postalCache = {};
+
+  const filteredListings = [];
+  for (const listing of listings) {
+    const listingPostal = listing.postal_code;
+    if (!listingPostal) continue;
+    if (!postalCache[listingPostal]) {
+      const coords = await oneMapAPI.getCoordinates(listingPostal);
+      console.log("Listing Coordinates:", coords);
+      postalCache[listingPostal] = coords;
+    }
+    const listingCoords = postalCache[listingPostal];
+    if (!listingCoords) continue;
+    const distance = calculateDistance(
+      userCoords.lat,
+      userCoords.lon,
+      listingCoords.lat,
+      listingCoords.lon
+    );
+    if (distance <= radius) {
+      filteredListings.push({ ...listing, distance });
+    }
+  }
+  return filteredListings;
+};
+
+// Haversine helper functions.
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = deg2rad(lat2 - lat1);
+  const dLon = deg2rad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+function deg2rad(deg) {
+  return deg * (Math.PI / 180);
+}
+
+
+// New function: searchByTitle
+exports.searchByTitle = async (searchTerm) => {
+  const result = await db.query(
+    `SELECT l.*, u.username AS poster_name, u.postal_code
+     FROM listings l
+     JOIN users u ON l.user_id = u.id
+     WHERE LOWER(l.item_name) LIKE LOWER($1)
+     ORDER BY l.created_at DESC`,
+    [`%${searchTerm}%`]
+  );
+  return result.rows;
+};
+
+
+This is my listingRoutes.js:
+const express = require('express');
+const router = express.Router();
+const upload = require('../middleware/upload');
+const listingController = require('../controllers/listingController');
+
+router.post('/', upload.single('image'), listingController.createListing);
+router.get('/near', listingController.getListingsNear); 
+router.get('/search', listingController.searchListings);
+
+
+router.get('/', listingController.getAllListings);
+router.get('/:id', listingController.getListingById);
+router.put('/:id', listingController.updateListingStatus);
+router.delete('/:id', listingController.deleteListing);
+
+
+
+module.exports = router;
+
+
+This is my listingsPage.js:
+// src/pages/ListingsPage.js
+import React, { useEffect, useState } from "react";
+import { Container } from "react-bootstrap";
+import { ListingCard } from "../components/Cards";
+import "./ListingsPage.css";
+
+const ListingsPage = () => {
+  const [listings, setListings] = useState([]);
+  const [filters, setFilters] = useState({
+    type: "",
+    expiry: "",
+    location: "",
+    status: "available", // default filter: show only available listings
+    radius: 10 // default radius in km
+  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const token = localStorage.getItem("token");
+  // Assuming the current user's postal code is stored in localStorage.
+  const userPostalCode = localStorage.getItem("postal_code") || "";
+
+  useEffect(() => {
+    const fetchListings = async () => {
+      const baseUrl = process.env.REACT_APP_API_URL;
+      let url = `${baseUrl}/listings`;
+      // If a search term is entered, hit the search endpoint.
+      if (searchTerm) {
+        url = `${baseUrl}/listings/search?title=${encodeURIComponent(searchTerm)}`;
+      } else if (filters.radius && userPostalCode) {
+        url = `${baseUrl}/listings/near?postal_code=${userPostalCode}&radius=${filters.radius}`;
+      }
+      try {
+        const res = await fetch(url, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        const data = await res.json();
+        // Adjust based on the structure of your API response:
+        setListings(Array.isArray(data) ? data : data.listings || []);
+      } catch (err) {
+        console.error("Error fetching listings:", err);
+      }
+    };
+    fetchListings();
+  }, [token, filters.radius, userPostalCode, searchTerm]);
+
+  // Client-side filters for type, expiry, status and location
+  const filteredListings = listings.filter((listing) => {
+    const matchesType = filters.type
+      ? listing.type.toLowerCase().includes(filters.type.toLowerCase())
+      : true;
+    const matchesExpiry = filters.expiry
+      ? listing.expiry_date === filters.expiry
+      : true;
+    const matchesStatus =
+      filters.status && filters.status.toLowerCase() !== "all"
+        ? listing.status.toLowerCase() === filters.status.toLowerCase()
+        : true;
+    // Location filter placeholder (additional client-side filtering if needed)
+    const matchesLocation = filters.location ? true : true;
+    return matchesType && matchesExpiry && matchesStatus && matchesLocation;
+  });
+
+  const handleFilterChange = (e) => {
+    setFilters({ ...filters, [e.target.name]: e.target.value });
+  };
+
+  // Reserve handler to update a listing’s status to "reserved"
+  const handleReserve = async (id) => {
+    try {
+      const baseUrl = process.env.REACT_APP_API_URL;
+      const res = await fetch(`${baseUrl}/listings/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ status: "reserved" }),
+      });
+      if (!res.ok) throw new Error("Failed to reserve listing");
+      const updatedListing = await res.json();
+      setListings((prevListings) =>
+        prevListings.map((listing) =>
+          listing.id === updatedListing.id ? updatedListing : listing
+        )
+      );
+    } catch (err) {
+      console.error("Error reserving listing:", err);
+    }
+  };
+
+  return (
+    <div className="listings-page">
+      <Container className="listings-container">
+        <h2 className="page-title">Listings</h2>
+
+        <div className="filters-section">
+          <div className="filter-group">
+            <label htmlFor="search">Search Title:</label>
+            <input
+              type="text"
+              name="search"
+              id="search"
+              placeholder="Enter title..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="filter-group">
+            <label htmlFor="type">Type:</label>
+            <input
+              type="text"
+              name="type"
+              id="type"
+              placeholder="Filter by Type"
+              value={filters.type}
+              onChange={handleFilterChange}
+            />
+          </div>
+          <div className="filter-group">
+            <label htmlFor="expiry">Expiry Date:</label>
+            <input
+              type="date"
+              name="expiry"
+              id="expiry"
+              placeholder="Filter by Expiry Date"
+              value={filters.expiry}
+              onChange={handleFilterChange}
+            />
+          </div>
+          <div className="filter-group">
+            <label htmlFor="location">Location:</label>
+            <input
+              type="text"
+              name="location"
+              id="location"
+              placeholder="Filter by Location"
+              value={filters.location}
+              onChange={handleFilterChange}
+            />
+          </div>
+          <div className="filter-group">
+            <label htmlFor="status">Status:</label>
+            <select
+              name="status"
+              id="status"
+              value={filters.status}
+              onChange={handleFilterChange}
+            >
+              <option value="available">Available</option>
+              <option value="reserved">Reserved</option>
+              <option value="completed">Completed</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+          <div className="filter-group slider-group">
+            <label htmlFor="radius-slider">Radius: {filters.radius} km</label>
+            <input
+              id="radius-slider"
+              type="range"
+              name="radius"
+              min="1"
+              max="50"
+              value={filters.radius}
+              onChange={handleFilterChange}
+            />
+          </div>
+        </div>
+
+        <div className="listings-grid">
+          {filteredListings.map((listing) => {
+            const imageUrl = `${process.env.REACT_APP_API_URL}/${listing.image_path}`;
+            return (
+              <div className="listing-card-container" key={listing.id}>
+                <ListingCard
+                  image={imageUrl}
+                  title={listing.item_name}
+                  description={listing.description}
+                  type={listing.type}
+                  expiry={listing.expiry_date}
+                  status={listing.status}
+                  createdAt={listing.created_at}
+                  posterName={listing.poster_name || "Unknown"}
+                  postalCode={listing.postal_code || "N/A"}
+                  onReserve={() => handleReserve(listing.id)}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </Container>
+    </div>
+  );
+};
+
+export default ListingsPage;
+
+
+This is my ListingsPage.css:
+/* src/pages/ListingsPage.css */
+
+/* Overall page background */
+.listings-page {
+  min-height: 100vh;
+  padding: 2rem 0;
+  background: linear-gradient(to right, var(--background-color), #ffffff);
+}
+
+/* Container with side margins */
+.listings-container {
+  margin: 0 2rem;
+}
+
+/* Page title styling */
+.page-title {
+  text-align: center;
+  color: var(--primary-color);
+  margin-bottom: 2rem;
+  font-weight: bold;
+}
+
+/* Filters section container */
+.filters-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  justify-content: center;
+  padding: 1rem;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  margin-bottom: 2rem;
+}
+
+/* Individual filter group styling */
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  min-width: 150px;
+}
+
+.filter-group label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.filter-group input,
+.filter-group select {
+  padding: 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+/* Slider group takes a bit more space */
+.slider-group {
+  flex: 1;
+  min-width: 200px;
+  align-items: center;
+}
+
+.slider-group input[type="range"] {
+  width: 100%;
+}
+
+/* Listings grid styling */
+.listings-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.5rem;
+}
+
+/* Container for each listing card and its button */
+.listing-card-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Reserve button styling */
+.reserve-button {
+  margin-top: 0.5rem;
+  padding: 0.5rem 1rem;
+  background-color: var(--primary-color);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.reserve-button:hover {
+  background-color: #0056b3;
+}
+
+This is my database schema:
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    postal_code VARCHAR(10) NOT NULL,
+    is_verified BOOLEAN DEFAULT FALSE,
+    otp_code VARCHAR(6),             -- For storing OTP temporarily
+    otp_expires_at TIMESTAMP,        -- For OTP expiration check
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users
+ADD COLUMN latitude NUMERIC,
+ADD COLUMN longitude NUMERIC;
+
+CREATE TABLE user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    total_listings_posted INTEGER DEFAULT 0,
+    total_requests_posted INTEGER DEFAULT 0,
+    listings_fulfilled INTEGER DEFAULT 0,     -- listings by others fulfilled by this user
+    requests_fulfilled INTEGER DEFAULT 0,     -- requests by others fulfilled by this user
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE listings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    image_path VARCHAR(255) NOT NULL,                -- Local path to the uploaded image
+    item_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50) NOT NULL,                       -- e.g., Books, Food, Furniture, etc.
+    expiry_date DATE,                                -- Nullable if not applicable
+    allergy TEXT,                                    -- Nullable if not applicable
+    status VARCHAR(20) DEFAULT 'available',          -- 'available', 'reserved', 'pending completion', 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the listing (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the listing (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+ALTER TABLE listings
+ADD COLUMN approved SMALLINT DEFAULT 0;
+
+
+CREATE TABLE requests (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    request_date DATE NOT NULL,
+    venue VARCHAR(255) NOT NULL,
+    description TEXT,
+    image_path VARCHAR(255),                         -- Optional image for the request
+    status VARCHAR(20) DEFAULT 'open',               -- 'open', 'reserved', or 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the request (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the request (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+ALTER TABLE requests
+ADD COLUMN approved SMALLINT DEFAULT 0;
+
+
+
+INSERT INTO listings (user_id, image_path, item_name, description, type, expiry_date, allergy, status)
+VALUES
+  (2, 'uploads/sample1.jpg', 'Free Books', 'A collection of gently used books available for free.', 'Books', '2025-05-01', NULL, 'available'),
+  (2, 'uploads/sample2.jpg', 'Chair Giveaway', 'Comfortable chairs perfect for community events.', 'Furniture', NULL, NULL, 'available'),
+  (2, 'uploads/sample3.jpg', 'Vintage Record Player', 'An old-school record player in working condition.', 'Electronics', '2025-06-15', NULL, 'available');
+
+INSERT INTO listings (user_id, image_path, item_name, description, type, expiry_date, allergy, status)
+VALUES
+  (2, 'uploads/chocolates.jpg', 'Organic Apples', 'Freshly picked organic apples from a local farm.', 'Food', '2025-04-30', 'None', 'available'),
+  (2, 'uploads/chocolates.jpg', 'Childrens Winter Jackets', 'Warm jackets for kids, sizes range from 5-10 years.', 'Clothes', NULL, NULL, 'reserved'),
+  (2, 'uploads/chocolates.jpg', 'Old Laptop', 'Works fine, just a bit slow. Good for basic tasks.', 'Electronics', NULL, NULL, 'available'),
+  (2, 'uploads/chocolates.jpg', 'Canned Goods Pack', 'Includes canned beans, tomatoes, and corn. Not expired.', 'Food', '2025-08-10', 'Soy', 'completed'),
+  (2, 'uploads/chocolates.jpg', 'Story Books for Kids', 'A collection of bedtime stories for children aged 4-8.', 'Books', NULL, NULL, 'available'),
+  (2, 'uploads/chocolates.jpg', 'Reusable Water Bottles', 'Set of 3 eco-friendly reusable bottles.', 'Home Items', NULL, NULL, 'reserved'),
+  (2, 'uploads/chocolates.jpg', 'Homemade Cookies', 'Freshly baked cookies in different flavors.', 'Food', '2025-04-01', 'Gluten', 'available');
+
+
+
+INSERT INTO requests (user_id, subject, request_date, venue, description, image_path, status)
+VALUES
+  (2, 'Help with Moving Sofa', '2025-04-15', '123 Community Center', 'Need assistance to move a heavy sofa at my place.', 'uploads/request1.jpg', 'open'),
+  (2, 'Math Tutor Needed', '2025-04-20', '456 Community Center', 'Looking for a math tutor for high school level.', NULL, 'open'),
+  (2, 'Gardening Assistance', '2025-05-05', '789 Community Center', 'Need help with seasonal garden maintenance.', 'uploads/request3.jpg', 'open');
+
+INSERT INTO users (
+  id, username, password_hash, email, phone, postal_code, is_verified
+) VALUES (
+  4, 'tampines_user', 'hashed_password_here', 'tampines@example.com', '98765432', '520201', TRUE
+);
+INSERT INTO listings (
+  user_id, image_path, item_name, description, type, expiry_date, allergy
+) VALUES
+-- Listing 1
+(4, 'uploads/chocolates.jpg', 'Dining Table Set', 'Used wooden dining table, seats 4.', 'Furniture', '2025-04-15', NULL),
+
+-- Listing 2
+(4, 'uploads/chocolates.jpg', 'Children Books Bundle', '10 storybooks for kids aged 6–9.', 'Books', NULL, NULL),
+
+-- Listing 3
+(4, 'uploads/chocolates.jpg', 'Surplus Rice Packets', '5kg unopened rice packets, halal-certified.', 'Food', '2025-03-30', 'None');
+
+CREATE TABLE user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    total_listings_posted INTEGER DEFAULT 0,
+    total_requests_posted INTEGER DEFAULT 0,
+    listings_fulfilled INTEGER DEFAULT 0,     -- listings by others fulfilled by this user
+    requests_fulfilled INTEGER DEFAULT 0,     -- requests by others fulfilled by this user
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+Instructions:
+- User should not be able to see their own listings 
+- Add a Add Listing Button on the same row as the title Listings all the way to the right. Make it a rectangle button with borders that says "+ Create Listing"
+- When create listing is clicked, it will open a popup to fill up of the listing, and it will take in these information:
+image_path VARCHAR(255) NOT NULL,                -- Local path to the uploaded image
+item_name VARCHAR(255) NOT NULL,
+description TEXT,
+type VARCHAR(50) NOT NULL,                       -- e.g., Books, Food, Furniture, etc.
+expiry_date DATE,                                -- Nullable if not applicable
+allergy TEXT,                                    -- Nullable if not applicable
+
+and save it in the database listings accordingly. Also update the table user_stats to increase the number of total_listings_posted
+
+Give me all the ncessary backend functions, and the full ListingPage.js and ListingPage.css with these functionalities.

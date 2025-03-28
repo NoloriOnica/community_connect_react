@@ -1,0 +1,694 @@
+This is my viewReservedListingsCard.js:
+
+import React, { useState, useEffect } from 'react';
+import './ReservedListingsRequests.css';
+import ViewReservedListingsCard from '../components/ViewReservedListingsCard';
+
+const ReservedListingsRequests = () => {
+  const [activeMainTab, setActiveMainTab] = useState('Listings');
+  const [activeListingsTab, setActiveListingsTab] = useState('Pending');
+  const [listings, setListings] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const token = localStorage.getItem('token');
+  const userData = localStorage.getItem("user");
+  const user = userData ? JSON.parse(userData) : {};
+  const userId = user.userId;
+
+  // Fetch listings based on the current sub-tab
+  const fetchListings = async () => {
+    setLoading(true);
+    try {
+      let endpoint = '';
+      if (activeListingsTab === 'Pending') {
+        endpoint = `${process.env.REACT_APP_API_URL}/reserved-listings?type=pending&user_id=${userId}`;
+      } else if (activeListingsTab === 'Approved') {
+        endpoint = `${process.env.REACT_APP_API_URL}/reserved-listings?type=approved&user_id=${userId}`;
+      } else if (activeListingsTab === 'Completed') {
+        endpoint = `${process.env.REACT_APP_API_URL}/reserved-listings?type=completed&user_id=${userId}`;
+      }
+
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`HTTP error! Status: ${res.status} - ${errorText}`);
+      }
+
+      const data = await res.json();
+      setListings(data);
+    } catch (error) {
+      console.error('Error fetching listings:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeMainTab === 'Listings') {
+      fetchListings();
+    }
+  }, [activeListingsTab, activeMainTab]);
+
+  return (
+    <div className="reserved-listings-requests-page">
+      <div className="main-tabs">
+        <button
+          className={activeMainTab === 'Listings' ? 'active' : ''}
+          onClick={() => setActiveMainTab('Listings')}
+        >
+          Listings
+        </button>
+        <button
+          className={activeMainTab === 'Requests' ? 'active' : ''}
+          onClick={() => setActiveMainTab('Requests')}
+        >
+          Requests
+        </button>
+      </div>
+
+      {activeMainTab === 'Listings' && (
+        <div className="listings-section">
+          <div className="sub-tabs">
+            <button
+              className={activeListingsTab === 'Pending' ? 'active' : ''}
+              onClick={() => setActiveListingsTab('Pending')}
+            >
+              Pending Approval
+            </button>
+            <button
+              className={activeListingsTab === 'Approved' ? 'active' : ''}
+              onClick={() => setActiveListingsTab('Approved')}
+            >
+              Approved
+            </button>
+            <button
+              className={activeListingsTab === 'Completed' ? 'active' : ''}
+              onClick={() => setActiveListingsTab('Completed')}
+            >
+              Completed
+            </button>
+          </div>
+          <div className="cards-container">
+            {loading ? (
+              <p>Loading...</p>
+            ) : listings && listings.length > 0 ? (
+              listings.map((listing) => (
+                <ViewReservedListingsCard key={listing.id} listing={listing} />
+              ))
+            ) : (
+              <p>No listings found.</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeMainTab === 'Requests' && (
+        <div className="requests-section">
+          <p>Requests functionality coming soon...</p>
+          {/* Future implementation for Requests */}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ReservedListingsRequests;
+
+This is my ReservedListingsRequests.css:
+.reserved-listings-requests-page {
+    padding: 1rem;
+  }
+  
+  .main-tabs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .main-tabs button {
+    padding: 0.5rem 1rem;
+    border: none;
+    background-color: #ddd;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 1rem;
+  }
+  
+  .main-tabs button.active {
+    background-color: #FF6961;
+    color: #fff;
+  }
+  
+  .sub-tabs {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  
+  .sub-tabs button {
+    padding: 0.4rem 0.8rem;
+    border: none;
+    background-color: #eee;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+  
+  .sub-tabs button.active {
+    background-color: #77DD77;
+    color: #fff;
+  }
+  
+  .cards-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+  }
+  
+This is my ViewReservedListingsCard.js:
+import React, { useState, useEffect } from 'react';
+import './ViewReservedListingsCard.css';
+import UserInfoCard from '../components/UserInfoCard';
+
+const formatDate = (dateStr) => dateStr ? new Date(dateStr).toLocaleDateString() : '';
+
+const ViewReservedListingsCard = ({ listing }) => {
+  const {
+    image_path,
+    item_name,
+    description,
+    type,
+    expiry_date,
+    allergy,
+    created_at,
+    updated_at,
+    reserved_by,    // reserved_by user id (should match local user id)
+    completed_by,   // completed_by user id (if set)
+    approved,       // 0 for pending, 1 for approved/completed
+    poster_email,   // added by backend for approved listings
+    poster_phone    // added by backend for approved listings
+  } = listing;
+
+  const imageUrl = image_path.startsWith('http')
+    ? image_path
+    : `${process.env.REACT_APP_API_URL}/${image_path}`;
+
+  // State and logic for a user info popup (for poster or reserved user info)
+  const [showUserModal, setShowUserModal] = useState(false);
+  const [popupUserId, setPopupUserId] = useState(null);
+  const [popupUserInfo, setPopupUserInfo] = useState(null);
+  const token = localStorage.getItem('token');
+
+  const handleUserClick = (userId) => {
+    setPopupUserId(userId);
+    setShowUserModal(true);
+  };
+
+  useEffect(() => {
+    if (popupUserId) {
+      fetch(`${process.env.REACT_APP_API_URL}/profile/${popupUserId}/info`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((res) => res.json())
+        .then((data) => setPopupUserInfo(data))
+        .catch((err) => console.error("Error fetching user info", err));
+    }
+  }, [popupUserId, token]);
+
+  const closeUserModal = () => {
+    setShowUserModal(false);
+    setPopupUserId(null);
+    setPopupUserInfo(null);
+  };
+
+  // Render status information based on approved flag and whether the listing is completed.
+  const renderStatusInfo = () => {
+    if (approved === 0) {
+      return (
+        <p className="status-info">
+          Reserved at: {formatDate(updated_at)} (Pending Approval)
+        </p>
+      );
+    } else if (approved === 1 && reserved_by && !completed_by) {
+      return (
+        <p className="status-info">
+          Reserved at: {formatDate(updated_at)} (Approved)
+        </p>
+      );
+    } else if (approved === 1 && completed_by) {
+      return (
+        <p className="status-info">
+          Completed at: {formatDate(updated_at)}
+        </p>
+      );
+    }
+    return null;
+  };
+
+  return (
+    <div className="view-reserved-card">
+      <img src={imageUrl} alt={item_name} className="card-img" />
+      <div className="card-body">
+        <h3>{item_name}</h3>
+        <p><strong>Description:</strong> {description}</p>
+        <p><strong>Type:</strong> {type}</p>
+        {expiry_date && <p><strong>Expiry:</strong> {formatDate(expiry_date)}</p>}
+        {allergy && <p><strong>Allergy Info:</strong> {allergy}</p>}
+        <p><strong>Created:</strong> {formatDate(created_at)}</p>
+        {renderStatusInfo()}
+        {/* Show additional contact info only in the Approved state */}
+        {approved === 1 && reserved_by && !completed_by && (
+          <div className="contact-info">
+            <p><strong>Poster Email:</strong> {poster_email}</p>
+            <p><strong>Contact Number:</strong> {poster_phone}</p>
+          </div>
+        )}
+      </div>
+
+      {showUserModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <span className="close-button" onClick={closeUserModal}>&times;</span>
+            </div>
+            <div className="modal-body">
+              {popupUserInfo ? (
+                <UserInfoCard userInfo={popupUserInfo} status="public" />
+              ) : (
+                <p>Loading user information...</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default ViewReservedListingsCard;
+
+This is my ViewReservedListingsCard.css:
+.view-reserved-card {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow: hidden;
+    background: #fff;
+    margin-bottom: 1rem;
+    max-width: 250px;
+  }
+  
+  .card-img {
+    width: 100%;
+    height: 150px;
+    object-fit: cover;
+  }
+  
+  .card-body {
+    padding: 0.8rem;
+  }
+  
+  .card-body h3 {
+    margin: 0 0 0.5rem;
+    color: #FF6961;
+    font-size: 1.1rem;
+  }
+  
+  .card-body p {
+    margin: 0.3rem 0;
+    color: #333;
+    font-size: 0.9rem;
+  }
+  
+  .status-info {
+    font-style: italic;
+    color: #555;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+  }
+  
+  .contact-info p {
+    margin: 0.3rem 0;
+    color: #333;
+    font-size: 0.9rem;
+    font-weight: bold;
+  }
+  
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+  }
+  
+  .modal-content {
+    background: #fff;
+    padding: 1rem;
+    border-radius: 8px;
+    width: 300px;
+  }
+  
+  .close-button {
+    float: right;
+    cursor: pointer;
+    font-size: 1.2rem;
+  }
+
+
+This is my Database:
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    email VARCHAR(100) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    postal_code VARCHAR(10) NOT NULL,
+    is_verified BOOLEAN DEFAULT FALSE,
+    otp_code VARCHAR(6),             -- For storing OTP temporarily
+    otp_expires_at TIMESTAMP,        -- For OTP expiration check
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+ALTER TABLE users
+ADD COLUMN latitude NUMERIC,
+ADD COLUMN longitude NUMERIC;
+
+CREATE TABLE user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    total_listings_posted INTEGER DEFAULT 0,
+    total_requests_posted INTEGER DEFAULT 0,
+    listings_fulfilled INTEGER DEFAULT 0,     -- listings by others fulfilled by this user
+    requests_fulfilled INTEGER DEFAULT 0,     -- requests by others fulfilled by this user
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE listings (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    image_path VARCHAR(255) NOT NULL,                -- Local path to the uploaded image
+    item_name VARCHAR(255) NOT NULL,
+    description TEXT,
+    type VARCHAR(50) NOT NULL,                       -- e.g., Books, Food, Furniture, etc.
+    expiry_date DATE,                                -- Nullable if not applicable
+    allergy TEXT,                                    -- Nullable if not applicable
+    status VARCHAR(20) DEFAULT 'available',          -- 'available', 'reserved', 'pending completion', 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the listing (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the listing (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+ALTER TABLE listings
+ADD COLUMN approved SMALLINT DEFAULT 0;
+
+
+CREATE TABLE requests (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    request_date DATE NOT NULL,
+    venue VARCHAR(255) NOT NULL,
+    description TEXT,
+    image_path VARCHAR(255),                         -- Optional image for the request
+    status VARCHAR(20) DEFAULT 'open',               -- 'open', 'reserved', or 'completed'
+    reserved_by INTEGER REFERENCES users(id),        -- User who reserved the request (nullable)
+    completed_by INTEGER REFERENCES users(id),       -- User who completed the request (nullable)
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+ALTER TABLE requests
+ADD COLUMN approved SMALLINT DEFAULT 0;
+
+
+
+INSERT INTO listings (user_id, image_path, item_name, description, type, expiry_date, allergy, status)
+VALUES
+  (2, 'uploads/sample1.jpg', 'Free Books', 'A collection of gently used books available for free.', 'Books', '2025-05-01', NULL, 'available'),
+  (2, 'uploads/sample2.jpg', 'Chair Giveaway', 'Comfortable chairs perfect for community events.', 'Furniture', NULL, NULL, 'available'),
+  (2, 'uploads/sample3.jpg', 'Vintage Record Player', 'An old-school record player in working condition.', 'Electronics', '2025-06-15', NULL, 'available');
+
+INSERT INTO listings (user_id, image_path, item_name, description, type, expiry_date, allergy, status)
+VALUES
+  (2, 'uploads/chocolates.jpg', 'Organic Apples', 'Freshly picked organic apples from a local farm.', 'Food', '2025-04-30', 'None', 'available'),
+  (2, 'uploads/chocolates.jpg', 'Childrens Winter Jackets', 'Warm jackets for kids, sizes range from 5-10 years.', 'Clothes', NULL, NULL, 'reserved'),
+  (2, 'uploads/chocolates.jpg', 'Old Laptop', 'Works fine, just a bit slow. Good for basic tasks.', 'Electronics', NULL, NULL, 'available'),
+  (2, 'uploads/chocolates.jpg', 'Canned Goods Pack', 'Includes canned beans, tomatoes, and corn. Not expired.', 'Food', '2025-08-10', 'Soy', 'completed'),
+  (2, 'uploads/chocolates.jpg', 'Story Books for Kids', 'A collection of bedtime stories for children aged 4-8.', 'Books', NULL, NULL, 'available'),
+  (2, 'uploads/chocolates.jpg', 'Reusable Water Bottles', 'Set of 3 eco-friendly reusable bottles.', 'Home Items', NULL, NULL, 'reserved'),
+  (2, 'uploads/chocolates.jpg', 'Homemade Cookies', 'Freshly baked cookies in different flavors.', 'Food', '2025-04-01', 'Gluten', 'available');
+
+
+
+INSERT INTO requests (user_id, subject, request_date, venue, description, image_path, status)
+VALUES
+  (2, 'Help with Moving Sofa', '2025-04-15', '123 Community Center', 'Need assistance to move a heavy sofa at my place.', 'uploads/request1.jpg', 'open'),
+  (2, 'Math Tutor Needed', '2025-04-20', '456 Community Center', 'Looking for a math tutor for high school level.', NULL, 'open'),
+  (2, 'Gardening Assistance', '2025-05-05', '789 Community Center', 'Need help with seasonal garden maintenance.', 'uploads/request3.jpg', 'open');
+
+INSERT INTO users (
+  id, username, password_hash, email, phone, postal_code, is_verified
+) VALUES (
+  4, 'tampines_user', 'hashed_password_here', 'tampines@example.com', '98765432', '520201', TRUE
+);
+INSERT INTO listings (
+  user_id, image_path, item_name, description, type, expiry_date, allergy
+) VALUES
+-- Listing 1
+(4, 'uploads/chocolates.jpg', 'Dining Table Set', 'Used wooden dining table, seats 4.', 'Furniture', '2025-04-15', NULL),
+
+-- Listing 2
+(4, 'uploads/chocolates.jpg', 'Children Books Bundle', '10 storybooks for kids aged 6–9.', 'Books', NULL, NULL),
+
+-- Listing 3
+(4, 'uploads/chocolates.jpg', 'Surplus Rice Packets', '5kg unopened rice packets, halal-certified.', 'Food', '2025-03-30', 'None');
+
+CREATE TABLE user_stats (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    total_listings_posted INTEGER DEFAULT 0,
+    total_requests_posted INTEGER DEFAULT 0,
+    listings_fulfilled INTEGER DEFAULT 0,     -- listings by others fulfilled by this user
+    requests_fulfilled INTEGER DEFAULT 0,     -- requests by others fulfilled by this user
+    last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+
+This is my reservedListingsController.js:
+// reservedListingsController.js
+const reservedListingsModel = require('../models/reservedListingsModel');
+
+exports.getReservedListings = async (req, res) => {
+  const { type, user_id } = req.query;
+
+  if (!user_id) {
+    return res.status(400).json({ error: 'Missing user_id in query parameters' });
+  }
+
+  try {
+    let listings;
+    if (type === 'pending') {
+      listings = await reservedListingsModel.getPendingListings(user_id);
+    } else if (type === 'approved') {
+      listings = await reservedListingsModel.getApprovedListings(user_id);
+    } else if (type === 'completed') {
+      listings = await reservedListingsModel.getCompletedListings(user_id);
+    } else {
+      return res.status(400).json({ error: 'Invalid type parameter. Must be one of: pending, approved, completed' });
+    }
+    res.json(listings);
+  } catch (err) {
+    console.error('Error fetching reserved listings:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+This is my reservedListingsModel.js:
+// reservedListingsModel.js
+const db = require('../config/db');
+
+exports.getPendingListings = async (user_id) => {
+  const query = `
+    SELECT * FROM listings
+    WHERE reserved_by = $1 AND approved = 0
+  `;
+  const { rows } = await db.query(query, [user_id]);
+  return rows;
+};
+
+exports.getApprovedListings = async (user_id) => {
+  const query = `
+    SELECT l.*, u.email AS poster_email, u.phone AS poster_phone
+    FROM listings l
+    JOIN users u ON l.user_id = u.id
+    WHERE l.reserved_by = $1 AND l.approved = 1 AND l.completed_by IS NULL
+  `;
+  const { rows } = await db.query(query, [user_id]);
+  return rows;
+};
+
+exports.getCompletedListings = async (user_id) => {
+  const query = `
+    SELECT * FROM listings
+    WHERE completed_by = $1 AND approved = 1
+  `;
+  const { rows } = await db.query(query, [user_id]);
+  return rows;
+};
+
+
+This is my reservedListingsRoutes.js:
+// reservedListingsRoutes.js
+const express = require('express');
+const router = express.Router();
+const reservedListingsController = require('../controllers/reservedListingsController');
+
+router.get('/', reservedListingsController.getReservedListings);
+
+module.exports = router;
+
+
+This is my UserInfoCard.js in my components to view the UserInfoCard.
+// src/components/UserInfoCard.js
+import React, { useState, useEffect } from 'react';
+import { Button, Form } from 'react-bootstrap';
+import './UserInfoCard.css';
+
+const UserInfoCard = ({ userInfo, updateInfo, status = "private" }) => {
+  const [editMode, setEditMode] = useState(false);
+  const [editInfo, setEditInfo] = useState(userInfo);
+  const [userStats, setUserStats] = useState(null);
+  const token = localStorage.getItem("token");
+
+  // Update local state when userInfo prop changes
+  useEffect(() => {
+    setEditInfo(userInfo);
+  }, [userInfo]);
+
+  // Fetch user stats using the backend route once userInfo has an id
+  useEffect(() => {
+    const fetchUserStats = async () => {
+      if (userInfo && userInfo.id) {
+        try {
+          const res = await fetch(`${process.env.REACT_APP_API_URL}/profile/${userInfo.id}/stats`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const statsData = await res.json();
+          setUserStats(statsData);
+        } catch (err) {
+          console.error("Error fetching user stats", err);
+        }
+      }
+    };
+
+    fetchUserStats();
+  }, [userInfo, token]);
+
+  const handleEditToggle = () => setEditMode(!editMode);
+
+  const handleInfoChange = (e) => {
+    setEditInfo({ ...editInfo, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    await updateInfo(editInfo); // callback from parent
+    setEditMode(false);
+  };
+
+  return (
+    <div className="user-info-card">
+      <h3>User Information</h3>
+      {editMode && status === "private" ? (
+        <Form onSubmit={handleSubmit}>
+          <Form.Group>
+            <Form.Label>Username</Form.Label>
+            <Form.Control
+              type="text"
+              name="username"
+              value={editInfo.username || ''}
+              readOnly
+            />
+          </Form.Group>
+          {status === "private" && (
+            <>
+              <Form.Group>
+                <Form.Label>Email</Form.Label>
+                <Form.Control
+                  type="email"
+                  name="email"
+                  value={editInfo.email || ''}
+                  onChange={handleInfoChange}
+                />
+              </Form.Group>
+              <Form.Group>
+                <Form.Label>Phone</Form.Label>
+                <Form.Control
+                  type="text"
+                  name="phone"
+                  value={editInfo.phone || ''}
+                  onChange={handleInfoChange}
+                />
+              </Form.Group>
+            </>
+          )}
+          <Form.Group>
+            <Form.Label>Postal Code</Form.Label>
+            <Form.Control
+              type="text"
+              name="postal_code"
+              value={editInfo.postal_code || ''}
+              onChange={handleInfoChange}
+            />
+          </Form.Group>
+          <Button variant="success" type="submit">Save</Button>
+          <Button variant="secondary" onClick={handleEditToggle}>Cancel</Button>
+        </Form>
+      ) : (
+        <div className="info-display">
+          <p><strong>Username:</strong> {userInfo.username}</p>
+          {status === "private" && (
+            <>
+              <p><strong>Email:</strong> {userInfo.email}</p>
+              <p><strong>Phone:</strong> {userInfo.phone}</p>
+            </>
+          )}
+          <p><strong>Postal Code:</strong> {userInfo.postal_code}</p>
+          {status === "private" && (
+            <Button variant="primary" onClick={handleEditToggle}>Edit Information</Button>
+          )}
+        </div>
+      )}
+      {userStats && (
+        <div className="stats-section">
+          <h4>Stats</h4>
+          <p><strong>Total Listings Posted:</strong> {userStats.total_listings_posted}</p>
+          <p><strong>Total Requests Posted:</strong> {userStats.total_requests_posted}</p>
+          <p><strong>Listings Fulfilled:</strong> {userStats.listings_fulfilled}</p>
+          <p><strong>Requests Fulfilled:</strong> {userStats.requests_fulfilled}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default UserInfoCard;
+
+
+Instructions:
+- For all the listing cards in ViewReservedListingsCard, i want you to show the user_name of the poster which can be clicked to show the UserInfoCard with status public as a popup.
+- Under Approved, Can you make the email and number clickable, such that it will automatically lead to gmail or whatsapp with the chat. 
+- Make the Listings and Requests Tab in the middle
+- Remove the background color for the sub tabs, leaving only the bottom underlines.
+
+Give me relevant backend changes, and frontend full ReservedListingsRequests.js, ReservedListingsRequests.css and ViewReservedListingsCard.js and ViewReservedListingsCard.css
